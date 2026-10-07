@@ -1497,6 +1497,9 @@ message ExecServerMessage {
     RecordScreenArgs record_screen_args = 21;
     ComputerUseArgs computer_use_args = 22;
     WriteShellStdinArgs write_shell_stdin_args = 23;
+    // Field 28 matches ToolCall.generate_image_tool_call; Cursor sends this as an
+    // unnamed length-delimited exec when the model requests image generation.
+    GenerateImageArgs generate_image_args = 28;
     ReflectArgs reflect_args = 32;
     SetupVmEnvironmentArgs setup_vm_environment_args = 33;
     TruncatedToolCallArgs truncated_tool_call_args = 34;
@@ -1527,6 +1530,7 @@ message ExecClientMessage {
     RecordScreenResult record_screen_result = 21;
     ComputerUseResult computer_use_result = 22;
     WriteShellStdinResult write_shell_stdin_result = 23;
+    GenerateImageResult generate_image_result = 28;
     ReflectResult reflect_result = 32;
     SetupVmEnvironmentResult setup_vm_environment_result = 33;
     TruncatedToolCallResult truncated_tool_call_result = 34;
