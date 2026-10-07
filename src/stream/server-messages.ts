@@ -22,6 +22,8 @@ import {
   ExecClientControlMessageSchema,
   ExecClientMessageSchema,
   ExecClientThrowSchema,
+  GenerateImageErrorSchema,
+  GenerateImageResultSchema,
   GetBlobResultSchema,
   KvClientMessageSchema,
   McpStateExecResultSchema,
@@ -574,6 +576,22 @@ function handleExecMessageInner(
             uri: args.uri ?? "",
             reason: REJECT_REASON,
           }),
+        },
+      }),
+      sendFrame,
+    );
+    return true;
+  }
+  if (execCase === "generateImageArgs") {
+    // Field 28. Answer with a typed error so Cursor does not park on an
+    // ExecClientThrow / unknown-shape path when the model asks for images.
+    sendExecResult(
+      execMsg,
+      "generateImageResult",
+      create(GenerateImageResultSchema, {
+        result: {
+          case: "error",
+          value: create(GenerateImageErrorSchema, { error: REJECT_REASON }),
         },
       }),
       sendFrame,

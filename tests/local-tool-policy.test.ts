@@ -158,6 +158,43 @@ describe("Pi-only local tool routing", () => {
     expect(localToolPolicyText(tools("search_repository"))).not.toContain("No Pi MCP tools");
   });
 
+  it("answers generateImageArgs with a typed error instead of an unhandled throw", () => {
+    const frames: Uint8Array[] = [];
+    const onMcp = vi.fn();
+    const onWork = vi.fn();
+    expect(
+      server.handleExecMessageInner(
+        exec("generateImageArgs", {
+          description: "a red cube",
+          filePath: "/tmp/cube.png",
+        }),
+        tools("bash"),
+        (frame) => frames.push(frame),
+        onMcp,
+        onWork,
+      ),
+    ).toBe(true);
+    expect(onMcp).not.toHaveBeenCalled();
+    expect(onWork).not.toHaveBeenCalled();
+    expect(frames).toHaveLength(1);
+    const answer = fromBinary(AgentClientMessageSchema, frames[0]!.subarray(5));
+    expect(answer).toMatchObject({
+      message: {
+        case: "execClientMessage",
+        value: {
+          id: 12,
+          execId: "exec-12",
+          message: {
+            case: "generateImageResult",
+            value: { result: { case: "error" } },
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(answer)).toContain("Do not retry this native Cursor tool");
+    expect(JSON.stringify(answer)).toContain("No operation was performed");
+  });
+
   it("still executes fetch through the async native path", async () => {
     const fetch = vi.fn().mockResolvedValue(new Response("web content"));
     vi.stubGlobal("fetch", fetch);

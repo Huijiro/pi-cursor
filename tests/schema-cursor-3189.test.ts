@@ -4,6 +4,7 @@ import {
   AgentServerMessageSchema,
   ConversationStateStructureSchema,
   ExecServerMessageSchema,
+  GenerateImageArgsSchema,
   HeartbeatUpdateSchema,
   InteractionUpdateSchema,
   TextDeltaUpdateSchema,
@@ -60,6 +61,27 @@ describe("Cursor 3.18.9 additive envelope fields", () => {
     });
     const round = fromBinary(ExecServerMessageSchema, toBinary(ExecServerMessageSchema, msg));
     expect(round.acceptHookAdditionalContexts).toBe(true);
+    expect(unknownFieldNos(round)).toEqual([]);
+  });
+
+  it("round-trips ExecServerMessage.generate_image_args (field 28) without $unknown", () => {
+    const msg = create(ExecServerMessageSchema, {
+      id: 28,
+      execId: "exec-28",
+      message: {
+        case: "generateImageArgs",
+        value: create(GenerateImageArgsSchema, {
+          description: "a red cube",
+          filePath: "/tmp/cube.png",
+        }),
+      },
+    });
+    const round = fromBinary(ExecServerMessageSchema, toBinary(ExecServerMessageSchema, msg));
+    expect(round.message.case).toBe("generateImageArgs");
+    expect(round.message.value).toMatchObject({
+      description: "a red cube",
+      filePath: "/tmp/cube.png",
+    });
     expect(unknownFieldNos(round)).toEqual([]);
   });
 
