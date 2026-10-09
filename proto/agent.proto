@@ -514,6 +514,265 @@ message SubagentPersistedState {
   SubagentType subagent_type = 4;
 }
 
+
+enum AgentMode {
+  AGENT_MODE_UNSPECIFIED = 0;
+  AGENT_MODE_AGENT = 1;
+  AGENT_MODE_ASK = 2;
+  AGENT_MODE_PLAN = 3;
+  AGENT_MODE_DEBUG = 4;
+  AGENT_MODE_TRIAGE = 5;
+  AGENT_MODE_PROJECT = 6;
+  AGENT_MODE_MULTITASK = 7;
+  AGENT_MODE_CUSTOM = 8;
+}
+
+enum GoalStatus {
+  GOAL_STATUS_UNSPECIFIED = 0;
+  GOAL_STATUS_ACTIVE = 1;
+  GOAL_STATUS_PAUSED = 2;
+  GOAL_STATUS_COMPLETE = 3;
+  GOAL_STATUS_CLEARED = 4;
+}
+
+enum SubagentExecutionEnvironment {
+  SUBAGENT_EXECUTION_ENVIRONMENT_UNSPECIFIED = 0;
+  SUBAGENT_EXECUTION_ENVIRONMENT_LOCAL = 1;
+  SUBAGENT_EXECUTION_ENVIRONMENT_CLOUD = 2;
+}
+
+enum SubagentRunStatus {
+  SUBAGENT_RUN_STATUS_UNSPECIFIED = 0;
+  SUBAGENT_RUN_STATUS_RUNNING = 1;
+  SUBAGENT_RUN_STATUS_BACKGROUNDED = 2;
+  SUBAGENT_RUN_STATUS_SUCCESS = 3;
+  SUBAGENT_RUN_STATUS_ERROR = 4;
+  SUBAGENT_RUN_STATUS_ABORTED = 5;
+}
+
+enum BackgroundTaskCompletionReason {
+  BACKGROUND_TASK_COMPLETION_REASON_UNSPECIFIED = 0;
+  BACKGROUND_TASK_COMPLETION_REASON_TASK_FINISHED = 1;
+  BACKGROUND_TASK_COMPLETION_REASON_TASK_PROGRESS = 2;
+}
+
+enum ResponseComparisonDisplayOrder {
+  RESPONSE_COMPARISON_DISPLAY_ORDER_UNSPECIFIED = 0;
+  RESPONSE_COMPARISON_DISPLAY_ORDER_PARENT_FIRST = 1;
+  RESPONSE_COMPARISON_DISPLAY_ORDER_ALTERNATE_FIRST = 2;
+}
+
+enum ResponseComparisonSkipReason {
+  RESPONSE_COMPARISON_SKIP_REASON_UNSPECIFIED = 0;
+  RESPONSE_COMPARISON_SKIP_REASON_ALTERNATE_TOOL_CALL = 1;
+  RESPONSE_COMPARISON_SKIP_REASON_INFERENCE_ERROR = 2;
+  RESPONSE_COMPARISON_SKIP_REASON_TIMEOUT = 3;
+  RESPONSE_COMPARISON_SKIP_REASON_CANCELLED = 4;
+}
+
+enum SubagentBackgroundReason {
+  SUBAGENT_BACKGROUND_REASON_UNSPECIFIED = 0;
+  SUBAGENT_BACKGROUND_REASON_AGENT_REQUEST = 1;
+  SUBAGENT_BACKGROUND_REASON_USER_REQUEST = 2;
+  SUBAGENT_BACKGROUND_REASON_QUEUED_FOLLOW_UP = 3;
+}
+
+message PlanRegistryEntry {
+  string id = 1;
+  string path = 2;
+}
+
+message TrackedGitRepo {
+  string repo_path = 1;
+  string branch_name = 2;
+}
+
+message CommunicateUpdateHistoryEntry {
+  string step = 1;
+  uint32 message_index = 3;
+}
+
+message CommunicateUpdateTurnState {
+  repeated CommunicateUpdateHistoryEntry history = 1;
+  optional string final_summary = 2;
+  optional string completed_subtitle = 3;
+}
+
+message SubagentRunState {
+  string parent_tool_call_id = 1;
+  optional string subagent_id = 2;
+  SubagentExecutionEnvironment environment = 3;
+  SubagentRunStatus status = 4;
+  optional string title = 5;
+  optional string detail = 6;
+  optional string transcript_path = 7;
+  optional string output_path = 8;
+  optional uint64 completed_timestamp_ms = 9;
+  optional BackgroundTaskCompletionReason completion_reason = 10;
+}
+
+message GoalState {
+  string conversation_id = 1;
+  string goal_id = 2;
+  string objective = 3;
+  GoalStatus status = 4;
+  uint32 idle_continuations_without_tool_calls = 5;
+  optional uint64 active_duration_ms = 6;
+  optional uint64 last_accrued_at_ms = 7;
+  uint32 continuation_count = 8;
+  optional string agent_session_id = 9;
+}
+
+message PromptSuggestionUpdate {
+  string suggestion = 1;
+}
+
+message PostRequestPromptUpdate {
+  string title = 1;
+  string message = 2;
+  string button_label = 3;
+  string button_url = 4;
+}
+
+message ActiveBranchChange {
+  string path = 1;
+  string branch_name = 2;
+}
+
+message FeedbackRequestCategory {
+  string id = 1;
+  string label = 2;
+}
+
+message FeedbackRequestCategoryGroup {
+  string id = 1;
+  string prompt = 2;
+  repeated FeedbackRequestCategory categories = 3;
+}
+
+message FeedbackRequestUpdate {
+  string request_id = 1;
+  optional string canonical_model_name = 2;
+  repeated FeedbackRequestCategory categories = 3;
+  repeated FeedbackRequestCategoryGroup category_groups = 4;
+  bool show_form_immediately = 5;
+  optional string title = 6;
+  optional string negative_title = 7;
+  optional string comment_placeholder = 8;
+}
+
+message ResponseComparisonStarted {
+  ResponseComparisonDisplayOrder display_order = 1;
+  string parent_invocation_id = 2;
+  string alternate_invocation_id = 3;
+  string parent_response = 4;
+  string comparison_config_id = 5;
+  string alternate_model_id = 6;
+}
+
+message ResponseComparisonTextDelta {
+  string text = 1;
+}
+
+message ResponseComparisonCompleted {
+}
+
+message ResponseComparisonSkipped {
+  ResponseComparisonSkipReason reason = 1;
+}
+
+message ResponseComparisonUpdate {
+  string comparison_id = 1;
+  oneof event {
+    ResponseComparisonStarted started = 2;
+    ResponseComparisonTextDelta text_delta = 3;
+    ResponseComparisonCompleted completed = 4;
+    ResponseComparisonSkipped skipped = 5;
+  }
+}
+
+message ContextInjectionQueued {
+}
+
+message ContextInjectionDelivered {
+  int32 step = 1;
+  string delivery_batch_id = 2;
+  int64 delivered_at_ms = 3;
+}
+
+message ContextInjectionQueuedForNextTurn {
+}
+
+message ContextInjectionCancelled {
+}
+
+message ContextInjectionRejected {
+  string reason = 1;
+}
+
+message ContextInjectionState {
+  oneof state {
+    ContextInjectionQueued queued = 1;
+    ContextInjectionDelivered delivered = 2;
+    ContextInjectionQueuedForNextTurn queued_for_next_turn = 3;
+    ContextInjectionCancelled cancelled = 4;
+    ContextInjectionRejected rejected = 5;
+  }
+}
+
+message ContextInjectionStateUpdate {
+  string injection_id = 1;
+  ContextInjectionState state = 2;
+}
+
+message RoutedModelUpdate {
+  string display_name = 1;
+}
+
+message GrokBotNudgeUpdate {
+  string job = 1;
+  string description = 2;
+  int32 show_number = 3;
+}
+
+// Minimal Task/subagent exec shapes. Field numbers match Cursor's daemon;
+// credential oneofs are omitted from this client because we never spawn the subagent.
+message SubagentArgs {
+  string tool_call_id = 1;
+  string subagent_type = 2;
+  string model_id = 3;
+  string prompt = 4;
+  bool readonly = 5;
+  optional string resume_agent_id = 6;
+  optional bool run_in_background = 7;
+  optional string parent_conversation_id = 9;
+  optional bool interrupt = 13;
+  optional string fork_agent_id = 15;
+  optional string root_parent_conversation_id = 16;
+  optional bool direct_meta_parent_child_subagent = 18;
+  optional string cloud_base_branch = 20;
+}
+
+message SubagentSuccess {
+  string agent_id = 1;
+  optional string final_message = 2;
+  int32 tool_call_count = 3;
+  SubagentBackgroundReason background_reason = 4;
+  optional string transcript_path = 5;
+}
+
+message SubagentError {
+  optional string agent_id = 1;
+  string error = 2;
+}
+
+message SubagentResult {
+  oneof result {
+    SubagentSuccess success = 1;
+    SubagentError error = 2;
+  }
+}
+
 message ConversationStateStructure {
   repeated bytes turns_old = 2;
   repeated bytes root_prompt_messages_json = 1;
@@ -524,7 +783,7 @@ message ConversationStateStructure {
   optional bytes summary = 6;
   optional bytes plan = 7;
   repeated string previous_workspace_uris = 9;
-  optional int32 mode = 10;
+  optional AgentMode mode = 10;
   optional bytes summary_archive = 11;
   map<string, bytes> file_states = 12;
   map<string, FileStateStructure> file_states_v2 = 15;
@@ -533,10 +792,25 @@ message ConversationStateStructure {
   map<string, SubagentPersistedState> subagent_states = 16;
   uint32 self_summary_count = 17;
   repeated string read_paths = 18;
-  bytes extra_state = 21;
-  string client_name = 22;
+  optional string active_branch_name = 19;
+  map<string, PlanRegistryEntry> plans = 20;
+  repeated TrackedGitRepo tracked_git_repo_branches = 21;
+  optional string agent_type = 22;
+  repeated CommunicateUpdateHistoryEntry communicate_update_history = 23;
+  map<string, string> subagent_threads = 24;
+  optional string communicate_update_final_summary = 25;
+  optional string communicate_update_completed_subtitle = 28;
+  map<string, CommunicateUpdateTurnState> communicate_update_states_by_parent_tool_call_id = 29;
+  map<string, SubagentRunState> subagent_runs_by_parent_tool_call_id = 30;
   optional uint64 conversation_started_timestamp_ms = 26;
   optional string conversation_started_time_zone = 27;
+  map<string, bytes> subagent_state_refs = 31;
+  optional GoalState goal_state = 32;
+  optional bool is_root_project_conversation = 33;
+  repeated string completed_ask_question_tool_call_ids = 34;
+  repeated string durable_skill_blocks = 35;
+  optional string durable_custom_mode_id = 36;
+  optional uint32 message_count_at_last_compaction = 37;
 }
 
 message ThinkingDetails {
@@ -701,6 +975,14 @@ message InteractionUpdate {
     TurnEndedUpdate turn_ended = 14;
     StepStartedUpdate step_started = 16;
     StepCompletedUpdate step_completed = 17;
+    PromptSuggestionUpdate prompt_suggestion = 18;
+    PostRequestPromptUpdate post_request_prompt = 19;
+    ActiveBranchChange active_branch_change = 20;
+    FeedbackRequestUpdate feedback_request = 21;
+    ResponseComparisonUpdate response_comparison = 22;
+    ContextInjectionStateUpdate context_injection_state = 23;
+    RoutedModelUpdate routed_model = 24;
+    GrokBotNudgeUpdate grok_bot_nudge = 26;
   }
   optional uint64 message_started_at_ms = 25;
 }
@@ -1497,9 +1779,8 @@ message ExecServerMessage {
     RecordScreenArgs record_screen_args = 21;
     ComputerUseArgs computer_use_args = 22;
     WriteShellStdinArgs write_shell_stdin_args = 23;
-    // Field 28 matches ToolCall.generate_image_tool_call; Cursor sends this as an
-    // unnamed length-delimited exec when the model requests image generation.
-    GenerateImageArgs generate_image_args = 28;
+    // Field 28 is Cursor's Task/subagent request. GenerateImage stays on ToolCall only.
+    SubagentArgs subagent_args = 28;
     ReflectArgs reflect_args = 32;
     SetupVmEnvironmentArgs setup_vm_environment_args = 33;
     TruncatedToolCallArgs truncated_tool_call_args = 34;
@@ -1530,7 +1811,7 @@ message ExecClientMessage {
     RecordScreenResult record_screen_result = 21;
     ComputerUseResult computer_use_result = 22;
     WriteShellStdinResult write_shell_stdin_result = 23;
-    GenerateImageResult generate_image_result = 28;
+    SubagentResult subagent_result = 28;
     ReflectResult reflect_result = 32;
     SetupVmEnvironmentResult setup_vm_environment_result = 33;
     TruncatedToolCallResult truncated_tool_call_result = 34;

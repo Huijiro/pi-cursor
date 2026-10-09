@@ -625,7 +625,6 @@ export function buildCursorRequestFromParts(
       subagentStates: {},
       selfSummaryCount: 0,
       readPaths: [],
-      clientName: "pi",
     });
   }
 

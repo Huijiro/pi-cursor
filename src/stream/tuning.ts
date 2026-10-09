@@ -159,6 +159,23 @@ export function interactionUpdateProgress(
   // parseable cases, not schema drift (see agent.proto StepStartedUpdate /
   // StepCompletedUpdate).
   if (updateCase === "stepStarted" || updateCase === "stepCompleted") return "work";
+  // Newer Cursor interaction cases. They are informational / UI side-channels,
+  // but they prove the stream is alive and must not be reported as unknown drift.
+  if (
+    updateCase === "promptSuggestion" ||
+    updateCase === "postRequestPrompt" ||
+    updateCase === "activeBranchChange" ||
+    updateCase === "feedbackRequest" ||
+    updateCase === "responseComparison" ||
+    updateCase === "contextInjectionState" ||
+    updateCase === "routedModel" ||
+    updateCase === "grokBotNudge" ||
+    updateCase === "userMessageAppended" ||
+    updateCase === "shellOutputDelta" ||
+    updateCase === "turnEnded"
+  ) {
+    return "work";
+  }
   return "none";
 }
 

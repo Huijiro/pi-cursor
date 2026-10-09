@@ -168,15 +168,18 @@ describe("Pi-only local tool routing", () => {
     );
   });
 
-  it("answers generateImageArgs with a typed error instead of an unhandled throw", () => {
+  it("answers subagentArgs with a typed error instead of an unhandled throw", () => {
     const frames: Uint8Array[] = [];
     const onMcp = vi.fn();
     const onWork = vi.fn();
     expect(
       server.handleExecMessageInner(
-        exec("generateImageArgs", {
-          description: "a red cube",
-          filePath: "/tmp/cube.png",
+        exec("subagentArgs", {
+          toolCallId: "task-1",
+          subagentType: "explore",
+          modelId: "default",
+          prompt: "scout the tree",
+          readonly: true,
         }),
         tools("bash"),
         (frame) => frames.push(frame),
@@ -195,14 +198,14 @@ describe("Pi-only local tool routing", () => {
           id: 12,
           execId: "exec-12",
           message: {
-            case: "generateImageResult",
+            case: "subagentResult",
             value: { result: { case: "error" } },
           },
         },
       },
     });
-    expect(JSON.stringify(answer)).toContain("Do not retry this native Cursor tool");
-    expect(JSON.stringify(answer)).toContain("No operation was performed");
+    expect(JSON.stringify(answer)).toContain("does not spawn Cursor subagents");
+    expect(JSON.stringify(answer)).not.toContain("scout the tree");
   });
 
   it("still executes fetch through the async native path", async () => {

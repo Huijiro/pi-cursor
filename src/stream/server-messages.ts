@@ -22,9 +22,9 @@ import {
   ExecClientControlMessageSchema,
   ExecClientMessageSchema,
   ExecClientThrowSchema,
-  GenerateImageErrorSchema,
-  GenerateImageResultSchema,
   GetBlobResultSchema,
+  SubagentErrorSchema,
+  SubagentResultSchema,
   KvClientMessageSchema,
   McpStateExecResultSchema,
   McpStateServerSchema,
@@ -605,16 +605,21 @@ function handleExecMessageInner(
     );
     return true;
   }
-  if (execCase === "generateImageArgs") {
-    // Field 28. Answer with a typed error so Cursor does not park on an
-    // ExecClientThrow / unknown-shape path when the model asks for images.
+  if (execCase === "subagentArgs") {
+    // Field 28 is Cursor's Task/subagent request. Do not read the prompt or any
+    // credential oneof, and do not claim success: that would look like a
+    // subagent ran. A typed error releases the exec without the unknown-shape path.
     sendExecResult(
       execMsg,
-      "generateImageResult",
-      create(GenerateImageResultSchema, {
+      "subagentResult",
+      create(SubagentResultSchema, {
         result: {
           case: "error",
-          value: create(GenerateImageErrorSchema, { error: REJECT_REASON }),
+          value: create(SubagentErrorSchema, {
+            error:
+              "Pi's Cursor provider does not spawn Cursor subagents. No subagent was started. " +
+              "Do the work in this conversation with the registered Pi MCP tools instead of calling Task again.",
+          }),
         },
       }),
       sendFrame,

@@ -119,7 +119,7 @@ describe("request build root prompt wiring", () => {
   it("always overlays Pi history onto a checkpoint so empty server placeholders are not the prompt", () => {
     const checkpoint = toBinary(
       ConversationStateStructureSchema,
-      create(ConversationStateStructureSchema, { clientName: "cli" }),
+      create(ConversationStateStructureSchema, { agentType: "cli" }),
     );
     const pinned = buildCursorRequest({
       modelId: "cursor-grok-4.6-low",
