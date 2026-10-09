@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- **Metrics and unknown-exec diagnostics no longer paint into Pi's editor.** `emitMetric` used to `console.warn` a JSON line (e.g. `metric.cursor_provider.rebuild_full_history`), and unhandled exec cases used `console.error`. Both corrupt the TUI input until redraw. Metrics now go to the lifecycle file only; unknown execs stay lifecycle-logged.
 - **Checkpoint resume no longer fights a stale `ConversationStateStructure`.** Fields 19–37 now match Cursor's agent-host daemon (`active_branch_name`, `plans`, `tracked_git_repo_branches`, `agent_type`, communicate-update / subagent-run maps, goal state, compaction counters, …). The old `extra_state`/`client_name` placeholders on 21/22 are gone, so upstream checkpoints decode and round-trip instead of forcing `rebuild_full_history` megabyte blob rebuilds.
 - **`InteractionUpdate` catches up to current Cursor side-channels** (`prompt_suggestion`, `post_request_prompt`, `active_branch_change`, `feedback_request`, `response_comparison`, `context_injection_state`, `routed_model`, `grok_bot_nudge`). These count as stream progress instead of unknown drift.
 - **Exec field 28 is Cursor's Task/subagent request**, not image generation. It is answered with a typed `SubagentError` and never claims a subagent ran. `GenerateImage` remains on the ToolCall oneof only.
