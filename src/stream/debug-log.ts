@@ -4,7 +4,7 @@
  * Three separate channels, deliberately:
  *   - `debugLog`     verbose JSONL, opt-in via PI_CURSOR_PROVIDER_DEBUG
  *   - `lifecycleLog` always-on compact log for diagnosing multi-minute stalls
- *   - `emitMetric`   structured counters, redirectable in tests
+ *   - `emitMetric`   structured counters (file lifecycle log; never console — that pollutes Pi's TUI)
  *
  * Everything here swallows its own errors: diagnostics must never break a turn.
  * Payloads pass through `sanitizeForDebug`, which truncates strings, summarizes
@@ -241,14 +241,8 @@ export function lifecycleLog(event: string, data?: Record<string, unknown>): voi
 export type MetricEmitter = (event: string, data: Record<string, unknown>) => void;
 
 const defaultMetricEmitter: MetricEmitter = (event, data) => {
-  console.warn(
-    JSON.stringify({
-      ts: new Date().toISOString(),
-      pid: process.pid,
-      event,
-      ...(sanitizeForDebug(data) as Record<string, unknown>),
-    }),
-  );
+  // File-only. console.warn painted the JSON into Pi's editor until redraw.
+  lifecycleLog(event, data);
 };
 
 let metricEmitter: MetricEmitter = defaultMetricEmitter;
@@ -256,8 +250,8 @@ let metricEmitter: MetricEmitter = defaultMetricEmitter;
 export function emitMetric(event: string, data: Record<string, unknown>): void {
   try {
     metricEmitter(event, data);
-  } catch (error) {
-    console.error("[pi-cursor-provider] failed to emit metric", error);
+  } catch {
+    // Never throw or console.* from diagnostics — both break / pollute the TUI.
   }
 }
 
