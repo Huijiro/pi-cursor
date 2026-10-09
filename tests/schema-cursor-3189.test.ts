@@ -4,9 +4,11 @@ import {
   AgentServerMessageSchema,
   ConversationStateStructureSchema,
   ExecServerMessageSchema,
-  GenerateImageArgsSchema,
+  SubagentArgsSchema,
+  GrokBotNudgeUpdateSchema,
   HeartbeatUpdateSchema,
   InteractionUpdateSchema,
+  RoutedModelUpdateSchema,
   TextDeltaUpdateSchema,
   TtftBreakdownSchema,
 } from "../src/proto/agent_pb.js";
@@ -64,25 +66,78 @@ describe("Cursor 3.18.9 additive envelope fields", () => {
     expect(unknownFieldNos(round)).toEqual([]);
   });
 
-  it("round-trips ExecServerMessage.generate_image_args (field 28) without $unknown", () => {
+  it("round-trips ExecServerMessage.subagent_args (field 28) without $unknown", () => {
     const msg = create(ExecServerMessageSchema, {
       id: 28,
       execId: "exec-28",
       message: {
-        case: "generateImageArgs",
-        value: create(GenerateImageArgsSchema, {
-          description: "a red cube",
-          filePath: "/tmp/cube.png",
+        case: "subagentArgs",
+        value: create(SubagentArgsSchema, {
+          toolCallId: "task-1",
+          subagentType: "explore",
+          modelId: "default",
+          prompt: "scout the tree",
+          readonly: true,
         }),
       },
     });
     const round = fromBinary(ExecServerMessageSchema, toBinary(ExecServerMessageSchema, msg));
-    expect(round.message.case).toBe("generateImageArgs");
+    expect(round.message.case).toBe("subagentArgs");
     expect(round.message.value).toMatchObject({
-      description: "a red cube",
-      filePath: "/tmp/cube.png",
+      toolCallId: "task-1",
+      subagentType: "explore",
+      modelId: "default",
+      prompt: "scout the tree",
+      readonly: true,
     });
     expect(unknownFieldNos(round)).toEqual([]);
+  });
+
+  it("round-trips ConversationStateStructure catch-up fields without $unknown", () => {
+    const msg = create(ConversationStateStructureSchema, {
+      activeBranchName: "main",
+      agentType: "pi",
+      completedAskQuestionToolCallIds: ["q1"],
+      durableSkillBlocks: ["skill-a"],
+      durableCustomModeId: "mode-1",
+      messageCountAtLastCompaction: 12,
+      conversationStartedTimestampMs: 1_725_000_000_000n,
+      conversationStartedTimeZone: "America/Halifax",
+    });
+    const round = fromBinary(
+      ConversationStateStructureSchema,
+      toBinary(ConversationStateStructureSchema, msg),
+    );
+    expect(round.activeBranchName).toBe("main");
+    expect(round.agentType).toBe("pi");
+    expect(round.completedAskQuestionToolCallIds).toEqual(["q1"]);
+    expect(round.durableSkillBlocks).toEqual(["skill-a"]);
+    expect(round.durableCustomModeId).toBe("mode-1");
+    expect(round.messageCountAtLastCompaction).toBe(12);
+    expect(unknownFieldNos(round)).toEqual([]);
+  });
+
+  it("round-trips InteractionUpdate.routed_model and grok_bot_nudge without $unknown", () => {
+    for (const [caseName, value] of [
+      ["routedModel", create(RoutedModelUpdateSchema, { displayName: "Auto" })],
+      [
+        "grokBotNudge",
+        create(GrokBotNudgeUpdateSchema, {
+          job: "nudge",
+          description: "continue",
+          showNumber: 1,
+        }),
+      ],
+    ] as const) {
+      const msg = create(InteractionUpdateSchema, {
+        message: { case: caseName, value },
+        messageStartedAtMs: 42n,
+      });
+      const round = fromBinary(InteractionUpdateSchema, toBinary(InteractionUpdateSchema, msg));
+      expect(round.message.case).toBe(caseName);
+      expect(round.messageStartedAtMs).toBe(42n);
+      expect(unknownFieldNos(round)).toEqual([]);
+    }
   });
 
   it("round-trips ConversationStateStructure start timestamp fields without $unknown", () => {
