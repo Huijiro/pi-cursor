@@ -61,6 +61,7 @@ import { debugLog, lifecycleLog } from "./debug-log.js";
 import { recordDriftSignal, recordUnknownFields } from "./drift.js";
 import { dispatchNativeExec, type NativeExecFrame } from "./exec-native.js";
 import { handleInteractionQuery } from "./interaction-query.js";
+import { normalizeMcpToolArgs } from "./mcp-arg-normalize.js";
 import { decodeMcpArgsMap } from "./request-build.js";
 import {
   availableToolNamesFor,
@@ -481,7 +482,7 @@ function handleExecMessageInner(
       sendExecResult(execMsg, "mcpResult", notFound, sendFrame);
       return true;
     }
-    const decoded = decodeMcpArgsMap(mcpArgs.args ?? {});
+    const decoded = normalizeMcpToolArgs(toolName, decodeMcpArgsMap(mcpArgs.args ?? {}));
     onMcpExec({
       execId: (execMsg as any).execId,
       execMsgId: (execMsg as any).id,
