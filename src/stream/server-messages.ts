@@ -30,6 +30,7 @@ import {
   McpStateServerSchema,
   McpStateSuccessSchema,
   McpToolDefinitionSchema,
+  McpErrorSchema,
   McpResultSchema,
   McpToolNotFoundSchema,
   ReadMcpResourceExecResultSchema,
@@ -61,7 +62,11 @@ import { debugLog, lifecycleLog } from "./debug-log.js";
 import { recordDriftSignal, recordUnknownFields } from "./drift.js";
 import { dispatchNativeExec, type NativeExecFrame } from "./exec-native.js";
 import { handleInteractionQuery } from "./interaction-query.js";
-import { normalizeMcpToolArgs } from "./mcp-arg-normalize.js";
+import {
+  emptyRequiredArgsError,
+  normalizeMcpToolArgs,
+  toolSchemaRequiresArgs,
+} from "./mcp-arg-normalize.js";
 import { decodeMcpArgsMap } from "./request-build.js";
 import {
   availableToolNamesFor,
@@ -483,6 +488,23 @@ function handleExecMessageInner(
       return true;
     }
     const decoded = normalizeMcpToolArgs(toolName, decodeMcpArgsMap(mcpArgs.args ?? {}));
+    const toolDef = mcpTools.find((tool) => (tool.toolName || tool.name) === toolName);
+    if (
+      Object.keys(decoded).length === 0 &&
+      toolSchemaRequiresArgs(toolDef?.inputSchemaJson)
+    ) {
+      const toolCallId =
+        typeof mcpArgs.toolCallId === "string" ? mcpArgs.toolCallId : "";
+      lifecycleLog("mcp_empty_required_args", { toolName, toolCallId });
+      const emptyArgs = create(McpResultSchema, {
+        result: {
+          case: "error",
+          value: create(McpErrorSchema, { error: emptyRequiredArgsError(toolName) }),
+        },
+      });
+      sendExecResult(execMsg, "mcpResult", emptyArgs, sendFrame);
+      return true;
+    }
     onMcpExec({
       execId: (execMsg as any).execId,
       execMsgId: (execMsg as any).id,

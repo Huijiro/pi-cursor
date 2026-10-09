@@ -39,3 +39,28 @@ export function normalizeMcpToolArgs(
 
   return out;
 }
+
+/** True when the tool schema lists at least one required argument. */
+export function toolSchemaRequiresArgs(inputSchemaJson: string | undefined): boolean {
+  if (!inputSchemaJson) return false;
+  try {
+    const schema = JSON.parse(inputSchemaJson) as { required?: unknown };
+    return Array.isArray(schema.required) && schema.required.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Cursor sometimes emits parallel MCP siblings with an empty args map
+ * (`…aws_ue1_0` filled, `…aws_ue1_1` `{}`). That is not a Pi schema bug — the
+ * payload never arrived — so ask for a filled retry instead of a validation spam.
+ */
+export function emptyRequiredArgsError(toolName: string): string {
+  return (
+    `MCP tool "${toolName}" was invoked with empty arguments ({}). ` +
+    "The args map never arrived from Cursor — this is not a missing field rename. " +
+    "Retry once with every required argument filled from the tool schema. " +
+    "If this followed another tool in the same parallel batch, prefer a sequential call."
+  );
+}

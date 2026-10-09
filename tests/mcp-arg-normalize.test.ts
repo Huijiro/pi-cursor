@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ExecServerMessage } from "../src/proto/agent_pb.js";
-import { normalizeMcpToolArgs } from "../src/stream/mcp-arg-normalize.js";
+import {
+  emptyRequiredArgsError,
+  normalizeMcpToolArgs,
+  toolSchemaRequiresArgs,
+} from "../src/stream/mcp-arg-normalize.js";
 import { buildMcpToolDefinitions, encodeMcpArgsMap } from "../src/stream/request-build.js";
 import { __testInternals as server } from "../src/stream/server-messages.js";
 
@@ -11,7 +15,14 @@ function tools(...names: string[]) {
       function: {
         name,
         description: name,
-        parameters: { type: "object" },
+        parameters: {
+          type: "object",
+          required: name === "write" || name === "read" || name === "edit" ? ["path"] : [],
+          properties:
+            name === "write" || name === "read" || name === "edit"
+              ? { path: { type: "string" } }
+              : {},
+        },
       },
     })),
   );
@@ -59,6 +70,12 @@ describe("normalizeMcpToolArgs", () => {
     expect(normalizeMcpToolArgs("edit", {})).toEqual({});
     expect(normalizeMcpToolArgs("write", {})).toEqual({});
   });
+
+  it("detects schemas that require arguments", () => {
+    expect(toolSchemaRequiresArgs('{"type":"object","required":["path"]}')).toBe(true);
+    expect(toolSchemaRequiresArgs('{"type":"object","required":[]}')).toBe(false);
+    expect(toolSchemaRequiresArgs(undefined)).toBe(false);
+  });
 });
 
 describe("mcpArgs write contents alias", () => {
@@ -85,5 +102,27 @@ describe("mcpArgs write contents alias", () => {
         decodedArgs: JSON.stringify({ path: "/tmp/a.ts", content: "body" }),
       }),
     );
+  });
+
+  it("rejects empty required args without handing them to Pi", () => {
+    const onMcp = vi.fn();
+    const send = vi.fn();
+    expect(
+      server.handleExecMessageInner(
+        exec("mcpArgs", {
+          toolName: "mcp_pi_read",
+          toolCallId: "r-empty",
+          args: encodeMcpArgsMap({}),
+        }),
+        tools("read"),
+        send,
+        onMcp,
+      ),
+    ).toBe(true);
+    expect(onMcp).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalled();
+    const frame = send.mock.calls[0]?.[0] as Uint8Array;
+    expect(Buffer.from(frame).toString("utf8")).toContain("empty arguments");
+    expect(emptyRequiredArgsError("read")).toContain("Retry once");
   });
 });
