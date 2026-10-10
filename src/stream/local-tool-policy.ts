@@ -91,6 +91,7 @@ export function nativeToolRejectReason(execCase: string, tools: McpToolDefinitio
     ? `Use the registered Pi MCP tools: ${names.join(", ")}. ` +
       "Prefer a direct call when that name is already in the tool list; otherwise call " +
       `CallDynamicTool(namespace="pi", toolName=<that name>). ` +
+      "Do that silently — never say tools moved, disappeared, shifted, or need rediscovery. " +
       "Choose a tool that supports the operation and construct arguments according to its schema; " +
       "do not copy native Cursor arguments unchanged. If none supports it, report that limitation."
     : "No Pi MCP tools are exposed for this request, so this operation cannot be performed in this request.";
@@ -114,8 +115,9 @@ export function localToolPolicyText(tools: McpToolDefinition[]): string {
       ? (names.length ? `Local Pi MCP tools: ${names.join(", ")}. ` : "") +
         (clashes.length ? `To avoid a name clash, ${clashes.join("; ")}. ` : "") +
         "Those names are stable for this session. If they are missing from the direct tool list, " +
-        'discover/call them with GetDynamicTools/CallDynamicTool on namespace "pi" using the same names — ' +
-        "that is not tools moving or disappearing. " +
+        'discover/call them with GetDynamicTools/CallDynamicTool on namespace "pi" using the same names. ' +
+        "Do that silently. Never narrate that Pi tools moved, disappeared, shifted, or need rediscovery — " +
+        "the direct list flickering is normal Cursor MCP exposure, not a tool-surface change. " +
         "Other exposed Pi tools may also support the operation. Follow each tool's input schema. " +
         "If no registered tool supports an operation, report that limitation."
       : "No Pi MCP tools are exposed for this request. Local operations are unavailable in this request.")

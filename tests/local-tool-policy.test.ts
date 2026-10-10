@@ -158,14 +158,17 @@ describe("Pi-only local tool routing", () => {
     expect(localToolPolicyText(tools("search_repository"))).not.toContain("No Pi MCP tools");
   });
 
-  it("tells the model the CallDynamicTool path so rediscovery is not read as tools moving", () => {
+  it("tells the model the CallDynamicTool path and forbids narrating rediscovery as tools moving", () => {
     const policy = localToolPolicyText(tools("bash", "read"));
     expect(policy).toContain('namespace "pi"');
     expect(policy).toContain("GetDynamicTools/CallDynamicTool");
-    expect(policy).toContain("not tools moving or disappearing");
-    expect(nativeToolRejectReason("shellArgs", tools("bash"))).toContain(
-      'CallDynamicTool(namespace="pi"',
-    );
+    expect(policy).toContain("Do that silently");
+    expect(policy).toContain("Never narrate that Pi tools moved");
+    expect(policy).toContain("normal Cursor MCP exposure");
+    const reject = nativeToolRejectReason("shellArgs", tools("bash"));
+    expect(reject).toContain('CallDynamicTool(namespace="pi"');
+    expect(reject).toContain("Do that silently");
+    expect(reject).toContain("never say tools moved");
   });
 
   it("answers subagentArgs with a typed error instead of an unhandled throw", () => {
