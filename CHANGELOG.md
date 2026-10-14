@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Conversation blob store entry default raised from 512 to 4096.** Long agent sessions were hitting `Cursor asked for blob … that is not in the local store (512 entries)` after a few hundred tool turns, which refuses the empty getBlob answer and fails the turn. The soft entry bound is now 4096, still oldest-first under the existing ~128 MiB byte cap, and overridable with `PI_CURSOR_MAX_ACTIVE_BLOB_ENTRIES` (floor 64, cap 16384).
+
 ### Fixed
 
 - **Metrics and unknown-exec diagnostics no longer paint into Pi's editor.** `emitMetric` used to `console.warn` a JSON line (e.g. `metric.cursor_provider.rebuild_full_history`), and unhandled exec cases used `console.error`. Both corrupt the TUI input until redraw. Metrics now go to the lifecycle file only; unknown execs stay lifecycle-logged.

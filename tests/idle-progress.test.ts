@@ -27,7 +27,11 @@ import {
   resolveStreamIdleMaxRetries,
   resolveStreamIdleTimeoutMs,
 } from "../src/stream/native-core.js";
-import { MAX_ACTIVE_BLOB_ENTRIES } from "../src/stream/tuning.js";
+import {
+  DEFAULT_MAX_ACTIVE_BLOB_ENTRIES,
+  MAX_ACTIVE_BLOB_ENTRIES,
+  resolveMaxActiveBlobEntries,
+} from "../src/stream/tuning.js";
 
 afterEach(() => {
   __testInternals.conversationStates.clear();
@@ -256,6 +260,16 @@ describe("idle timeout resolvers", () => {
     expect(resolveStreamIdleMaxRetries("99")).toBe(10);
     expect(resolveH2IdleTimeoutMs("60000")).toBe(60_000);
     expect(resolveH2IdleTimeoutMs("0")).toBe(0);
+  });
+
+  it("defaults blob entry bound to 4096 and clamps PI_CURSOR_MAX_ACTIVE_BLOB_ENTRIES", () => {
+    expect(DEFAULT_MAX_ACTIVE_BLOB_ENTRIES).toBe(4096);
+    expect(resolveMaxActiveBlobEntries(undefined)).toBe(4096);
+    expect(resolveMaxActiveBlobEntries("")).toBe(4096);
+    expect(resolveMaxActiveBlobEntries("8192")).toBe(8192);
+    expect(resolveMaxActiveBlobEntries("1")).toBe(64);
+    expect(resolveMaxActiveBlobEntries("999999")).toBe(16384);
+    expect(resolveMaxActiveBlobEntries("nope")).toBe(4096);
   });
 });
 
