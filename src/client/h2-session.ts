@@ -322,10 +322,22 @@ export function createBridgeHandleForSession(
     finalizeExit(2);
   });
 
+  // Quiet TCP / intermediary closes often skip GOAWAY and only emit `close`. Without this,
+  // `alive` stayed true while `session.closed` flipped, so idle reuse called openStream on a
+  // dead session and failed the next turn with exit 1 before the transport retry kicked in.
+  session.on("close", () => {
+    if (exited) return;
+    appendDiagnostic("[h2-session] session closed");
+    debugLog("bridge.session_close", {});
+    finalizeExit(2);
+  });
+
+  const sessionHealthy = (): boolean => !session.destroyed && !session.closed;
+
   const pingEveryMs = PING_INTERVAL_MS;
   if (pingEveryMs > 0) {
     pingTimer = setInterval(() => {
-      if (session.destroyed || session.closed) return;
+      if (!sessionHealthy()) return;
       try {
         session.ping?.((err) => {
           if (err) debugLog("bridge.ping_failed", { message: err.message });
@@ -341,17 +353,21 @@ export function createBridgeHandleForSession(
 
   armWatchdog(connectTimeoutMs);
 
-  const openStream = (accessToken: string): void => {
-    if (exited) return;
-    if (session.destroyed || session.closed) {
+  const openStream = (accessToken: string): boolean => {
+    if (exited) return false;
+    if (!sessionHealthy()) {
       appendDiagnostic("[h2-session] cannot open stream: session closed");
-      finalizeExit(1);
-      return;
+      debugLog("bridge.open_stream_dead", {});
+      // Exit 2: retriable transport loss. Callers that clear close listeners before reopen
+      // (idle reuse) treat the `false` return as "spawn fresh" and never see this close.
+      finalizeExit(2);
+      return false;
     }
     const stream = session.request(
       buildRequestHeaders(rpcPath, unary, accessToken),
     ) as unknown as H2Stream;
     attachStream(stream);
+    return true;
   };
 
   // Open the initial stream eagerly, same as h2-bridge.mjs did at process start.
@@ -405,7 +421,9 @@ export function createBridgeHandleForSession(
       },
     },
     get alive() {
-      return !exited;
+      // Include session health so idle-park reuse drops bridges Cursor already closed
+      // (GOAWAY / quiet TCP close) instead of treating `!exited` alone as reusable.
+      return !exited && sessionHealthy();
     },
     lastStderr() {
       return stderrTail.trim();
@@ -413,14 +431,14 @@ export function createBridgeHandleForSession(
     write(data: Uint8Array) {
       safeWrite(data);
     },
-    openStream(accessToken: string) {
+    openStream(accessToken: string): boolean {
       cbs.data = null;
       cbs.streamDone = null;
       cbs.close = null;
       queuedData.length = 0;
       queuedDataBytes = 0;
       queuedStreamDone = false;
-      openStream(accessToken || options.accessToken);
+      return openStream(accessToken || options.accessToken);
     },
     end() {
       safeEnd();
@@ -539,11 +557,13 @@ function createProxiedBridge(
       if (inner) inner.write(data);
       else pendingWrites.push(data);
     },
-    openStream(accessToken: string) {
+    openStream(accessToken: string): boolean {
       onDataCb = undefined;
       onStreamDoneCb = undefined;
       onCloseCb = undefined;
-      inner?.openStream?.(accessToken);
+      // Still connecting: treat as ok so the pending inner open runs once ready.
+      if (!inner) return !failed && !ended;
+      return inner.openStream?.(accessToken) ?? false;
     },
     end() {
       ended = true;

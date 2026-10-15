@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Idle HTTP/2 bridge reuse no longer fails then retries when Cursor quietly closed the parked session.** `alive` now reflects session health, quiet `close` events finalize the bridge, and `openStream` returns `false` on a dead session so `startBridge` drops it and spawns fresh instead of writing into a closed connection (the old `bridge_close` code=1 within ms of `stream_start` stutter).
+
 ### Changed
 
 - **Usable checkpoint prompts are left alone by default.** Requests no longer rewrite `root_prompt_messages_json` every turn. Pi transcript is published only for no-checkpoint / empty-prompt rebuilds, or when `refreshSystemPrompt` fires. `PI_CURSOR_PROMPT_HISTORY=0` still limits rebuild publishes to the local-tool policy, but no longer wipes a usable checkpoint prompt list.

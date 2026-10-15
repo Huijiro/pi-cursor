@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { create, toBinary } from "@bufbuild/protobuf";
 import { mkdirSync, mkdtempSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -47,6 +47,7 @@ import {
 } from "../src/stream/session-state.js";
 import {
   activeBridges,
+  idleBridges,
   parkIdleBridge,
   removeActiveBridge,
   setBridgeFactoryForTests,
@@ -540,6 +541,7 @@ describe("idle HTTP/2 bridge reuse", () => {
       onClose: () => {},
       openStream: (token: string) => {
         opens.push(token);
+        return true;
       },
     };
     setBridgeFactoryForTests(() => {
@@ -554,6 +556,101 @@ describe("idle HTTP/2 bridge reuse", () => {
     expect(spawned).toEqual([]);
     expect(opens).toEqual(["tok-2"]);
     expect(started.bridge).toBe(handle);
+  });
+
+  it("spawns a fresh bridge when openStream reports the parked session is dead", () => {
+    const spawned: string[] = [];
+    let killCalls = 0;
+    const deadHandle = {
+      proc: {
+        kill: () => {
+          killCalls++;
+          return true;
+        },
+      },
+      alive: true,
+      lastStderr: () => "",
+      write: vi.fn(),
+      end: vi.fn(),
+      onData: () => {},
+      onClose: () => {},
+      openStream: () => {
+        deadHandle.alive = false;
+        return false;
+      },
+    };
+    const freshHandle = {
+      proc: { kill: () => true },
+      alive: true,
+      lastStderr: () => "",
+      write: vi.fn(),
+      end: () => {},
+      onData: () => {},
+      onClose: () => {},
+      openStream: () => true,
+    };
+    setBridgeFactoryForTests(() => {
+      spawned.push("spawn");
+      return freshHandle;
+    });
+
+    parkIdleBridge("bk-dead", deadHandle);
+    const started = startBridge("tok-3", new Uint8Array([9, 9]), { bridgeKey: "bk-dead" });
+    clearInterval(started.heartbeatTimer);
+
+    expect(spawned).toEqual(["spawn"]);
+    expect(started.bridge).toBe(freshHandle);
+    expect(deadHandle.write).not.toHaveBeenCalled();
+    expect(freshHandle.write).toHaveBeenCalled();
+    expect(killCalls).toBeGreaterThanOrEqual(1);
+  });
+
+  it("skips reuse when a parked bridge is already marked not alive", () => {
+    const spawned: string[] = [];
+    let killCalls = 0;
+    const deadHandle = {
+      proc: {
+        kill: () => {
+          killCalls++;
+          return true;
+        },
+      },
+      alive: false,
+      lastStderr: () => "",
+      write: vi.fn(),
+      end: vi.fn(),
+      onData: () => {},
+      onClose: () => {},
+      openStream: vi.fn(() => true),
+    };
+    const freshHandle = {
+      proc: { kill: () => true },
+      alive: true,
+      lastStderr: () => "",
+      write: vi.fn(),
+      end: () => {},
+      onData: () => {},
+      onClose: () => {},
+      openStream: () => true,
+    };
+    setBridgeFactoryForTests(() => {
+      spawned.push("spawn");
+      return freshHandle;
+    });
+
+    // Bypass parkIdleBridge's canReuse check by stuffing the idle map directly.
+    idleBridges.set("bk-already-dead", {
+      bridge: deadHandle as never,
+      idleTimer: setTimeout(() => {}, 60_000),
+    });
+
+    const started = startBridge("tok-4", new Uint8Array([4]), { bridgeKey: "bk-already-dead" });
+    clearInterval(started.heartbeatTimer);
+
+    expect(spawned).toEqual(["spawn"]);
+    expect(started.bridge).toBe(freshHandle);
+    expect(deadHandle.openStream).not.toHaveBeenCalled();
+    expect(killCalls).toBeGreaterThanOrEqual(1);
   });
 });
 
