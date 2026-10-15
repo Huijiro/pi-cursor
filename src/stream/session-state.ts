@@ -16,6 +16,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { fromBinary } from "@bufbuild/protobuf";
 
 import { ConversationStateStructureSchema } from "../proto/agent_pb.js";
+import { collectReferencedBlobIds } from "./blob-refs.js";
 import {
   activeBridges,
   cleanupBridge,
@@ -237,23 +238,40 @@ export function trimBlobStore(
   store: Map<string, Uint8Array>,
   maxBytes = MAX_CONVERSATION_BLOB_BYTES,
   maxEntries = Number.POSITIVE_INFINITY,
-): { removed: number; totalBytes: number } {
+  protect?: ReadonlySet<string>,
+): { removed: number; removedProtected: number; totalBytes: number } {
   let totalBytes = 0;
   for (const value of store.values()) totalBytes += value.byteLength;
   const withinBudget = () => totalBytes <= maxBytes && store.size <= maxEntries;
-  if (withinBudget()) return { removed: 0, totalBytes };
+  if (withinBudget()) return { removed: 0, removedProtected: 0, totalBytes };
 
   let removed = 0;
-  // Map iteration order is insertion order — drop oldest blobs first.
-  for (const key of store.keys()) {
+  let removedProtected = 0;
+  // Map iteration order is insertion order — drop oldest unreferenced blobs first.
+  // Snapshot keys so deletions during the walk do not skip neighbors.
+  for (const key of [...store.keys()]) {
     if (withinBudget()) break;
+    if (protect?.has(key)) continue;
     const value = store.get(key);
     if (!value) continue;
     totalBytes -= value.byteLength;
     store.delete(key);
     removed += 1;
   }
-  return { removed, totalBytes };
+  // Still over budget: force-evict protected ids too (oldest first). Callers that
+  // pass `protect` treat removedProtected > 0 as "checkpoint is no longer safe".
+  if (!withinBudget()) {
+    for (const key of [...store.keys()]) {
+      if (withinBudget()) break;
+      const value = store.get(key);
+      if (!value) continue;
+      totalBytes -= value.byteLength;
+      store.delete(key);
+      removed += 1;
+      if (protect?.has(key)) removedProtected += 1;
+    }
+  }
+  return { removed, removedProtected, totalBytes };
 }
 
 /**
@@ -268,31 +286,49 @@ function clearCheckpointBytesOnly(stored: StoredConversation): void {
   delete stored.checkpointHistoryFingerprint;
 }
 
+export interface MergeBlobStoreOptions {
+  /** Checkpoint whose blob ids must be retained when possible (defaults to `stored.checkpoint`). */
+  protectCheckpoint?: Uint8Array | null;
+}
+
 /**
  * Merge a stream's blobs into the retained per-conversation store, trimming to the byte and entry
- * bounds. Returns how many blobs the trim evicted, which decides whether a checkpoint may be kept:
- * see the eviction note below.
+ * bounds. Returns how many *referenced* blobs the trim was forced to evict: only that count decides
+ * whether a checkpoint may be kept. Unreferenced orphans can be dropped safely.
  */
 export function mergeBlobStore(
   stored: StoredConversation,
   blobStore: Map<string, Uint8Array>,
+  options?: MergeBlobStoreOptions,
 ): { evicted: number } {
   // Delete-then-set moves each still-referenced blob to the end of the insertion order, which is
   // what `trimBlobStore` treats as newest. Plain `set` leaves an existing key in place, so the
   // system-prompt blob — written first on every build, and pointed at by `rootPromptMessagesJson`
   // in every checkpoint — stayed permanently oldest and would be the first thing evicted.
+  const incomingKeys = [...blobStore.keys()];
   for (const [k, v] of blobStore) {
     stored.blobStore.delete(k);
     stored.blobStore.set(k, v);
   }
+
+  const protectCheckpoint =
+    options && "protectCheckpoint" in options ? options.protectCheckpoint : stored.checkpoint;
+  const protect = new Set<string>(incomingKeys);
+  for (const id of collectReferencedBlobIds(protectCheckpoint, stored.blobStore)) protect.add(id);
+  if (stored.checkpoint && stored.checkpoint !== protectCheckpoint) {
+    for (const id of collectReferencedBlobIds(stored.checkpoint, stored.blobStore)) protect.add(id);
+  }
+
   const trimmed = trimBlobStore(
     stored.blobStore,
     MAX_CONVERSATION_BLOB_BYTES,
     MAX_ACTIVE_BLOB_ENTRIES,
+    protect,
   );
-  if (trimmed.removed > 0) {
+  if (trimmed.removedProtected > 0) {
     debugLog("conversation.blob_store_trimmed", {
       removed: trimmed.removed,
+      removedProtected: trimmed.removedProtected,
       totalBytes: trimmed.totalBytes,
       entries: stored.blobStore.size,
       maxBytes: MAX_CONVERSATION_BLOB_BYTES,
@@ -304,13 +340,20 @@ export function mergeBlobStore(
     debugLog("conversation.checkpoint_dropped_evicted_blobs", {
       conversationId: stored.conversationId,
       hadCheckpoint: !!stored.checkpoint,
-      evicted: trimmed.removed,
+      evicted: trimmed.removedProtected,
       entries: stored.blobStore.size,
     });
     clearCheckpointBytesOnly(stored);
+  } else if (trimmed.removed > 0) {
+    debugLog("conversation.blob_store_trimmed_unreferenced", {
+      removed: trimmed.removed,
+      totalBytes: trimmed.totalBytes,
+      entries: stored.blobStore.size,
+      protected: protect.size,
+    });
   }
   stored.lastAccessMs = Date.now();
-  return { evicted: trimmed.removed };
+  return { evicted: trimmed.removedProtected };
 }
 
 export function commitStoredCheckpoint(
@@ -322,7 +365,7 @@ export function commitStoredCheckpoint(
   convKey?: string,
 ): void {
   const completedHistory = [...completedTurns, currentTurn];
-  const { evicted } = mergeBlobStore(stored, blobStore);
+  const { evicted } = mergeBlobStore(stored, blobStore, { protectCheckpoint: checkpointBytes });
   if (evicted === 0) {
     stored.checkpoint = checkpointBytes;
     stored.checkpointSource = "upstream";
@@ -372,7 +415,9 @@ export function persistAbortedConversationState(
   // makes the next tool-continuation / idle-retry treat a still-valid checkpoint
   // as stale. Keep the checkpoint keyed to the completed history only.
   if (latestCheckpoint) {
-    const { evicted } = mergeBlobStore(stored, blobStore);
+    const { evicted } = mergeBlobStore(stored, blobStore, {
+      protectCheckpoint: latestCheckpoint,
+    });
     if (evicted === 0) {
       stored.checkpoint = latestCheckpoint;
       stored.checkpointSource = "upstream";
@@ -405,7 +450,9 @@ export function commitStoredCheckpointMidPause(
   pendingToolCalls: Array<{ toolCallId: string; toolName: string }>,
   convKey?: string,
 ): void {
-  const { evicted } = mergeBlobStore(stored, blobStore);
+  const { evicted } = mergeBlobStore(stored, blobStore, {
+    protectCheckpoint: checkpointBytes,
+  });
   const completedHistoryFingerprint = fingerprintCompletedTurns(completedTurns);
   const usableCheckpoint = evicted === 0 ? checkpointBytes : null;
   if (usableCheckpoint) {

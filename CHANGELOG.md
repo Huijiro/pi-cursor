@@ -2,9 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Blob-store eviction no longer deletes ids the live checkpoint still references.** Trim/merge/`setBlobArgs`/journal encode now collect nested checkpoint blob ids and drop unreferenced orphans first. A checkpoint is discarded only when a referenced blob is forced out; raising the entry cap alone could still miss after long tool-heavy chats.
+
 ### Changed
 
-- **Conversation blob store entry default raised from 512 to 4096.** Long agent sessions were hitting `Cursor asked for blob … that is not in the local store (512 entries)` after a few hundred tool turns, which refuses the empty getBlob answer and fails the turn. The soft entry bound is now 4096, still oldest-first under the existing ~128 MiB byte cap, and overridable with `PI_CURSOR_MAX_ACTIVE_BLOB_ENTRIES` (floor 64, cap 16384).
+- **Conversation blob store entry default raised from 512 to 4096.** Long agent sessions were hitting `Cursor asked for blob … that is not in the local store (512 entries)` after a few hundred tool turns, which refuses the empty getBlob answer and fails the turn. The soft entry bound is now 4096, still oldest-first under the existing ~128 MiB byte cap, and overridable with `PI_CURSOR_MAX_ACTIVE_BLOB_ENTRIES` (floor 64, cap 16384). The referenced-first retention above is the real fix for checkpoint-shaped misses; the higher cap remains a safety margin.
 
 ### Fixed
 

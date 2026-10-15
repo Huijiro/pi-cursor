@@ -22,6 +22,7 @@ import {
 import { join as pathJoin } from "node:path";
 
 import { getCacheDir } from "../utils/cache-dir.js";
+import { collectReferencedBlobIds } from "./blob-refs.js";
 import { debugLog } from "./debug-log.js";
 import { MAX_ACTIVE_BLOB_ENTRIES, MAX_INDIVIDUAL_BLOB_BYTES } from "./tuning.js";
 import type { StoredConversation } from "./types.js";
@@ -161,25 +162,34 @@ function encodeBlob(data: Uint8Array): string {
 function encodeBlobs(
   blobStore: Map<string, Uint8Array>,
   budgetChars: number,
+  referenced: ReadonlySet<string> = new Set(),
 ): { entries: JournalBlobEntry[]; omitted: number } {
-  // Map iteration is insertion order; keep the newest tail when something must go.
+  // Prefer checkpoint-referenced blobs, then the newest unreferenced tail.
+  // Map iteration is insertion order; newest entries are at the end.
   const all = [...blobStore.entries()];
+  const referencedEntries = all.filter(([id]) => referenced.has(id));
+  const unreferencedNewestFirst = all.filter(([id]) => !referenced.has(id)).reverse();
+  const ordered = [...referencedEntries, ...unreferencedNewestFirst];
+
   const kept: JournalBlobEntry[] = [];
+  const keptIds = new Set<string>();
   let usedChars = 0;
-  let omitted = 0;
-  for (let i = all.length - 1; i >= 0; i--) {
-    const [id, data] = all[i]!;
+  for (const [id, data] of ordered) {
+    if (keptIds.has(id)) continue;
     const encoded = encodeBlob(data);
     // `id.length + encoded.length` under-counts the JSON punctuation around each
     // entry; the slack constant covers that and the rest of the record.
     if (kept.length >= MAX_ACTIVE_BLOB_ENTRIES || usedChars + encoded.length > budgetChars) {
-      omitted = i + 1;
       break;
     }
     usedChars += encoded.length + id.length;
     kept.push({ id, data: encoded });
+    keptIds.add(id);
   }
-  kept.reverse();
+  // Preserve insertion order in the journal for readability / stable diffs.
+  const index = new Map(all.map(([id], i) => [id, i]));
+  kept.sort((a, b) => (index.get(a.id) ?? 0) - (index.get(b.id) ?? 0));
+  const omitted = Math.max(0, all.length - kept.length);
   return { entries: kept, omitted };
 }
 
@@ -226,7 +236,8 @@ export function serializeConversationJournal(
     0,
     MAX_JOURNAL_FILE_BYTES - (checkpoint?.length ?? 0) - JOURNAL_METADATA_SLACK_CHARS,
   );
-  const { entries, omitted } = encodeBlobs(stored.blobStore, budgetChars);
+  const referenced = collectReferencedBlobIds(stored.checkpoint, stored.blobStore);
+  const { entries, omitted } = encodeBlobs(stored.blobStore, budgetChars, referenced);
   if (omitted > 0) {
     debugLog("journal.blobs_omitted", { convKey, omitted, kept: entries.length });
   }
@@ -470,5 +481,6 @@ export const __testInternals = {
   MAX_JOURNAL_FILE_BYTES,
   serializeConversationJournal,
   deserializeConversationJournal,
+  encodeBlobs,
   journalPath,
 };
