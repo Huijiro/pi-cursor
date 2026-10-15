@@ -10,7 +10,7 @@ import { __testInternals } from "../src/stream/run-journal.js";
 import { MAX_ACTIVE_BLOB_ENTRIES } from "../src/stream/tuning.js";
 import type { StoredConversation } from "../src/stream/types.js";
 
-const { serializeConversationJournal, deserializeConversationJournal } = __testInternals;
+const { serializeConversationJournal, deserializeConversationJournal, encodeBlobs } = __testInternals;
 
 function stored(blobStore: Map<string, Uint8Array>, checkpoint: Uint8Array | null = null) {
   return {
@@ -110,3 +110,16 @@ describe("journal blob persistence", () => {
     expect(restored.midPauseTurnCount).toBe(2);
   });
 });
+
+  it("prefers checkpoint-referenced blobs under a tight budget", () => {
+    const store = new Map<string, Uint8Array>([
+      ["orphan-old", new Uint8Array(40).fill(1)],
+      ["keep-me", new Uint8Array(10).fill(2)],
+      ["orphan-new", new Uint8Array(40).fill(3)],
+    ]);
+    const { entries, omitted } = encodeBlobs(store, 80, new Set(["keep-me"]));
+    const ids = entries.map((e) => e.id);
+    expect(ids).toContain("keep-me");
+    expect(omitted).toBeGreaterThan(0);
+  });
+

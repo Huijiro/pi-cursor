@@ -83,6 +83,7 @@ import {
   MAX_INDIVIDUAL_BLOB_BYTES,
   type StreamProgress,
 } from "./tuning.js";
+import { collectReferencedBlobIds } from "./blob-refs.js";
 import { conversationStates, markBlobMiss, trimBlobStore } from "./session-state.js";
 import type { PendingExec, StreamState } from "./types.js";
 import { setLastStreamEvent } from "../diagnostics/diagnostics.js";
@@ -342,19 +343,27 @@ function handleKvMessage(
       throw new Error(`Cursor blob store exceeds the ${MAX_ACTIVE_BLOB_BYTES} byte limit`);
     }
     if (!blobStore.has(blobIdKey)) {
+      const stored = convKey ? conversationStates.get(convKey) : undefined;
+      const protect = collectReferencedBlobIds(stored?.checkpoint, blobStore);
       const evicted = trimBlobStore(
         blobStore,
         MAX_ACTIVE_BLOB_BYTES - blobData.byteLength,
         MAX_ACTIVE_BLOB_ENTRIES - 1,
+        protect,
       );
       if (evicted.removed > 0) {
         debugLog("kv.blob_store_evicted", {
           removed: evicted.removed,
+          removedProtected: evicted.removedProtected,
           totalBytes: evicted.totalBytes,
           entries: blobStore.size,
           maxEntries: MAX_ACTIVE_BLOB_ENTRIES,
+          protected: protect.size,
         });
       }
+      // Forced out a checkpoint-referenced blob: invalidate so the next turn rebuilds
+      // instead of answering later getBlobs with silent holes.
+      if (evicted.removedProtected > 0 && convKey) markBlobMiss(convKey);
     }
     blobStore.set(blobIdKey, blobData);
     sendKvResponse(kvMsg, "setBlobResult", create(SetBlobResultSchema, {}), sendFrame);

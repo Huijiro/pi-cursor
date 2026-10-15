@@ -2,7 +2,9 @@
  * Failures that used to be permanent: state that, once bad, broke every later turn of a
  * conversation rather than just the turn that produced it.
  */
+import { create, toBinary } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
+import { ConversationStateStructureSchema } from "../src/proto/agent_pb.js";
 import { parseMessages } from "../src/stream/message-parsing.js";
 import {
   commitStoredCheckpoint,
@@ -174,8 +176,8 @@ describe("blob store eviction order", () => {
  * Restoring from the journal already refuses to pair a checkpoint with an incomplete blob set
  * (`journal.checkpoint_dropped_incomplete_blobs`), because Cursor answers a missing blob with an
  * empty result and the turn comes back blank rather than failing. Committing a checkpoint has to
- * hold the same line: the entry bound evicts oldest-first on a conversation that outgrows it, and
- * keeping the checkpoint anyway hands Cursor references we can no longer serve.
+ * hold the same line when a *referenced* blob is forced out. Unreferenced orphans may be trimmed
+ * without dropping the checkpoint.
  */
 describe("checkpoint durability across blob eviction", () => {
   const turn: ParsedTurn = { userText: "do the thing", steps: [] };
@@ -204,6 +206,36 @@ describe("checkpoint durability across blob eviction", () => {
 
     expect(stored.checkpoint).toBe(checkpoint);
     expect(stored.checkpointTurnCount).toBe(1);
+  });
+
+  it("keeps the checkpoint when only unreferenced orphans were trimmed", () => {
+    const rootId = new Uint8Array(32).fill(11);
+    const rootHex = Buffer.from(rootId).toString("hex");
+    const checkpoint = toBinary(
+      ConversationStateStructureSchema,
+      create(ConversationStateStructureSchema, {
+        rootPromptMessagesJson: [rootId],
+        turns: [],
+      }),
+    );
+    const rootBytes = new TextEncoder().encode("rules");
+    const stored = storedConversation({
+      blobStore: new Map<
+        string,
+        Uint8Array
+      >([
+        [rootHex, rootBytes],
+        ...Array.from(
+          { length: 8 },
+          (_, i) => [`orphan-${i}`, new Uint8Array(8).fill(i)] as [string, Uint8Array],
+        ),
+      ]),
+    });
+
+    commitStoredCheckpoint(stored, checkpoint, new Map([[rootHex, rootBytes]]), [], turn);
+
+    expect(stored.checkpoint).toEqual(checkpoint);
+    expect(stored.blobStore.has(rootHex)).toBe(true);
   });
 
   it("drops an earlier checkpoint when a merge that writes no checkpoint evicts blobs", () => {
