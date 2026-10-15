@@ -587,32 +587,52 @@ export function buildCursorRequestFromParts(
     );
   }
 
-  // `turns` is state, not prompt: Cursor's server never renders it back into
-  // model messages. The prompt it actually reads is this list. Always overlay
-  // a fresh prompt from Pi's transcript — a checkpoint's historical user
-  // entries are often empty placeholders.
-  // With history enabled, merge the capability policy into the existing rules
-  // message. Without history, retain only the policy as a separate user message.
-  const promptMessages = isPromptHistoryEnabled()
-    ? buildRootPromptMessages(
-        `${systemPrompt}\n\n${localToolPolicyText(mcpTools)}`,
-        turns,
-        availableToolNamesFor(mcpTools),
-      )
-    : [systemPromptRootMessage(localToolPolicyText(mcpTools))];
-  const promptBlobIds = promptMessages.map((message) =>
-    storeAsBlob(encodeRootPromptMessage(message), blobStore),
-  );
-  const rootPromptMessagesJson = [systemBlobId, ...promptBlobIds];
+  // `turns` is state, not prompt: Cursor's server never renders them back into
+  // model messages. The prompt it actually reads is root_prompt_messages_json.
+  // Default: when a usable upstream checkpoint already carries that list, leave
+  // it alone and only send the new user action. Republishing the whole Pi
+  // transcript every turn made long chats huge/slow, and wiping it to policy
+  // only caused amnesia after rebuilds. Publish (or refresh) prompts only when
+  // there is no checkpoint, the checkpoint list is empty, or the system prompt
+  // hash changed.
+  const policyText = localToolPolicyText(mcpTools);
+  const publishPromptMessages = (): Uint8Array[] => {
+    const promptMessages = isPromptHistoryEnabled()
+      ? buildRootPromptMessages(
+          `${systemPrompt}\n\n${policyText}`,
+          turns,
+          availableToolNamesFor(mcpTools),
+        )
+      : [systemPromptRootMessage(policyText)];
+    const promptBlobIds = promptMessages.map((message) =>
+      storeAsBlob(encodeRootPromptMessage(message), blobStore),
+    );
+    return [systemBlobId, ...promptBlobIds];
+  };
 
   let conversationState;
   if (checkpoint) {
     conversationState = fromBinary(ConversationStateStructureSchema, checkpoint);
-    conversationState.rootPromptMessagesJson = rootPromptMessagesJson;
     conversationState.turns = turnBlobIds;
+    const emptyPrompts = conversationState.rootPromptMessagesJson.length === 0;
+    if (emptyPrompts) {
+      conversationState.rootPromptMessagesJson = publishPromptMessages();
+    } else if (refreshSystemPrompt) {
+      if (isPromptHistoryEnabled()) {
+        // System prompt changed: republish transcript + updated rules.
+        conversationState.rootPromptMessagesJson = publishPromptMessages();
+      } else {
+        // Keep checkpoint history; append an updated policy/rules message only.
+        conversationState.rootPromptMessagesJson = [
+          ...conversationState.rootPromptMessagesJson,
+          storeAsBlob(encodeRootPromptMessage(systemPromptRootMessage(policyText)), blobStore),
+        ];
+      }
+    }
+    // else: leave rootPromptMessagesJson alone.
   } else {
     conversationState = create(ConversationStateStructureSchema, {
-      rootPromptMessagesJson,
+      rootPromptMessagesJson: publishPromptMessages(),
       turns: turnBlobIds,
       todos: [],
       pendingToolCalls: [],
@@ -649,9 +669,8 @@ export function buildCursorRequestFromParts(
   const requestedModel = create(RequestedModelSchema, { modelId, maxMode, parameters });
   // Do not set customSystemPrompt. Cursor's agent maps that field onto a
   // `--system-prompt` CLI option; this client path rejects it as unknown.
-  // Pi's prompt already rides root_prompt_messages_json as a <rules> user
-  // message (see root-prompt.ts). Overlay already publishes the current prompt,
-  // so refreshSystemPrompt does not append a second copy.
+  // Pi's prompt rides root_prompt_messages_json as a <rules> user message on
+  // first publish / rebuild / system-prompt refresh (see root-prompt.ts).
   const runRequest = create(AgentRunRequestSchema, {
     conversationState,
     action,

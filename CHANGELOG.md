@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Usable checkpoint prompts are left alone by default.** Requests no longer rewrite `root_prompt_messages_json` every turn. Pi transcript is published only for no-checkpoint / empty-prompt rebuilds, or when `refreshSystemPrompt` fires. `PI_CURSOR_PROMPT_HISTORY=0` still limits rebuild publishes to the local-tool policy, but no longer wipes a usable checkpoint prompt list.
+
 ### Fixed
 
 - **Blob-store eviction no longer deletes ids the live checkpoint still references.** Trim/merge/`setBlobArgs`/journal encode now collect nested checkpoint blob ids and drop unreferenced orphans first. A checkpoint is discarded only when a referenced blob is forced out; raising the entry cap alone could still miss after long tool-heavy chats.
