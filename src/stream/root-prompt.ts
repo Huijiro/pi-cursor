@@ -248,11 +248,26 @@ export function encodeRootPromptMessage(message: RootPromptMessage): Uint8Array 
   return new TextEncoder().encode(JSON.stringify(message));
 }
 
-/** Env escape hatch: `PI_CURSOR_PROMPT_HISTORY=0` restores the pre-fix behavior. */
-export function isPromptHistoryEnabled(envValue = process.env.PI_CURSOR_PROMPT_HISTORY): boolean {
-  const raw = envValue?.trim().toLowerCase();
-  if (!raw) return true;
+function isEnabledFlag(value: string | undefined): boolean | undefined {
+  const raw = value?.trim().toLowerCase();
+  if (!raw) return undefined;
   return raw !== "0" && raw !== "false" && raw !== "off" && raw !== "no";
+}
+
+/**
+ * Whether to publish system prompt + completed turns as Cursor root prompt messages.
+ * Env (`PI_CURSOR_PROMPT_HISTORY`) wins when set; otherwise the plugin setting value
+ * is used; otherwise default on. Pass args explicitly in tests.
+ */
+export function isPromptHistoryEnabled(
+  envValue = process.env.PI_CURSOR_PROMPT_HISTORY,
+  settingValue?: string,
+): boolean {
+  const fromEnv = isEnabledFlag(envValue);
+  if (fromEnv !== undefined) return fromEnv;
+  const fromSetting = isEnabledFlag(settingValue);
+  if (fromSetting !== undefined) return fromSetting;
+  return true;
 }
 
 /** Identity of the system prompt currently published to a Cursor conversation. */

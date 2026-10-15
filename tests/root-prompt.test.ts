@@ -1,5 +1,5 @@
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   AgentClientMessageSchema,
@@ -7,6 +7,10 @@ import {
 } from "../src/proto/agent_pb.js";
 import { buildCursorRequest } from "../src/stream/request-build.js";
 import { fingerprintCompletedTurns } from "../src/stream/recovery.js";
+import {
+  resolvePromptHistoryEnabled,
+  setPromptHistorySettingForTests,
+} from "../src/stream/prompt-history-setting.js";
 import {
   buildRootPromptMessages,
   cursorMcpToolName,
@@ -92,10 +96,52 @@ describe("root prompt messages", () => {
     expect(isPromptHistoryEnabled(undefined)).toBe(true);
     expect(isPromptHistoryEnabled("0")).toBe(false);
     expect(isPromptHistoryEnabled("off")).toBe(false);
+    expect(isPromptHistoryEnabled("false")).toBe(false);
+    expect(isPromptHistoryEnabled("no")).toBe(false);
+  });
+
+  it("falls back to the plugin setting when env is unset", () => {
+    expect(isPromptHistoryEnabled(undefined, "off")).toBe(false);
+    expect(isPromptHistoryEnabled(undefined, "on")).toBe(true);
+    expect(isPromptHistoryEnabled("1", "off")).toBe(true);
+    expect(isPromptHistoryEnabled("0", "on")).toBe(false);
+  });
+});
+
+describe("resolvePromptHistoryEnabled", () => {
+  beforeEach(() => {
+    setPromptHistorySettingForTests(undefined);
+    delete process.env.PI_CURSOR_PROMPT_HISTORY;
+  });
+  afterEach(() => {
+    setPromptHistorySettingForTests(null);
+    delete process.env.PI_CURSOR_PROMPT_HISTORY;
+  });
+
+  it("uses the plugin setting when env is absent", () => {
+    setPromptHistorySettingForTests("off");
+    expect(resolvePromptHistoryEnabled()).toBe(false);
+    setPromptHistorySettingForTests("on");
+    expect(resolvePromptHistoryEnabled()).toBe(true);
+  });
+
+  it("lets the env override the plugin setting", () => {
+    setPromptHistorySettingForTests("on");
+    process.env.PI_CURSOR_PROMPT_HISTORY = "0";
+    expect(resolvePromptHistoryEnabled()).toBe(false);
   });
 });
 
 describe("request build root prompt wiring", () => {
+  beforeEach(() => {
+    setPromptHistorySettingForTests(undefined);
+    delete process.env.PI_CURSOR_PROMPT_HISTORY;
+  });
+  afterEach(() => {
+    setPromptHistorySettingForTests(null);
+    delete process.env.PI_CURSOR_PROMPT_HISTORY;
+  });
+
   it("publishes system prompt and completed turns when there is no checkpoint", () => {
     const payload = buildCursorRequest({
       modelId: "cursor-grok-4.6-low",

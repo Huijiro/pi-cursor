@@ -6,6 +6,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { getLastDiagnostics } from "../diagnostics/diagnostics.js";
 import { formatDriftSummary, getDriftSignals, hasStrandingDrift } from "../stream/drift.js";
 import { readCachedCatalog } from "../stream/model-cache.js";
+import { promptHistoryDiagnostic } from "../stream/prompt-history-setting.js";
 import { getCacheDir } from "../utils/cache-dir.js";
 import { getCursorAgentUrl, getCursorClientVersion } from "../stream/config.js";
 import { resolveSystemCredentialPolicy } from "../auth/consent.js";
@@ -120,6 +121,7 @@ export function registerCursorCommands(pi: ExtensionAPI, options: CursorCommandO
         `lastRecoverySkipReason=${d.lastRecoverySkipReason || "none"}`,
         `lastStreamEvent=${d.lastStreamEvent || "none"}`,
         `lastRequestSize=${d.lastRequestSize || "none"}`,
+        `promptHistory=${promptHistoryDiagnostic()}`,
         `lastDriftSignal=${d.lastDriftSignal || "none"}`,
         `wireDrift=${formatDriftSummary() || "none"}`,
         `wireDriftStranding=${hasStrandingDrift() ? "yes" : "no"}`,

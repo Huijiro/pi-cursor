@@ -173,4 +173,4 @@ src/
 | `PI_CURSOR_RAW_MODELS`                         | Set to `1` or `true` to disable reasoning effort suffix collapsing in model picker                                                                                   |
 | `PI_CURSOR_STREAM_IDLE_TIMEOUT_MS`             | Stream silence watchdog in ms (default: `180000` / 3 min; `0` disables). Heartbeats do not reset it while an exec is unanswered; that path uses a 45s park deadline. |
 | `PI_CURSOR_H2_IDLE_TIMEOUT_MS`                 | HTTP/2 bridge activity idle timeout in ms (default: `0` / disabled)                                                                                                  |
-| `PI_CURSOR_PROMPT_HISTORY`                     | Set to `0` or `false` to stop publishing system prompt + history as prompt messages                                                                                  |
+| `PI_CURSOR_PROMPT_HISTORY`                     | Set to `0`/`false`/`off` to stop publishing system prompt + history as prompt messages (overrides plugin setting `pi-cursor.promptHistory`)                             |

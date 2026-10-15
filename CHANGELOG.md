@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`promptHistory` plugin setting** (via `/extension-settings` when `@juanibiapina/pi-extension-settings` is installed). Same gate as `PI_CURSOR_PROMPT_HISTORY`: when off, requests no longer replay the full Pi transcript into `root_prompt_messages_json` every turn. Env still overrides the setting when set. `/cursor.doctor` prints the effective value.
+
 ### Changed
 
 - **Conversation blob store entry default raised from 512 to 4096.** Long agent sessions were hitting `Cursor asked for blob … that is not in the local store (512 entries)` after a few hundred tool turns, which refuses the empty getBlob answer and fails the turn. The soft entry bound is now 4096, still oldest-first under the existing ~128 MiB byte cap, and overridable with `PI_CURSOR_MAX_ACTIVE_BLOB_ENTRIES` (floor 64, cap 16384).

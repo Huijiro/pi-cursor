@@ -32,6 +32,10 @@ import {
 import { getStartupCursorAccessToken, isTokenNearExpiry } from "./extension/auth.js";
 import { createProviderManager, loadStartupCatalog } from "./extension/provider.js";
 import { registerCursorCommands } from "./extension/commands.js";
+import {
+  PI_CURSOR_SETTINGS_EXTENSION_NAME,
+  PROMPT_HISTORY_SETTING_ID,
+} from "./stream/prompt-history-setting.js";
 
 // ── Re-exports for public API, tests, and external scripts ──
 
@@ -168,5 +172,20 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     getAccessToken,
     getLastRegisteredModels: () => lastRegisteredModels,
     getCurrentTokenSource: () => currentTokenSource,
+  });
+
+  // Shown in /extension-settings when @juanibiapina/pi-extension-settings is loaded first.
+  pi.events.emit("pi-extension-settings:register", {
+    name: PI_CURSOR_SETTINGS_EXTENSION_NAME,
+    settings: [
+      {
+        id: PROMPT_HISTORY_SETTING_ID,
+        label: "Prompt History",
+        description:
+          "Replay Pi's system prompt and completed turns into Cursor root_prompt_messages_json on every turn. Off is much faster on long tool-heavy chats; rebuilt/resumed sessions may lose history. PI_CURSOR_PROMPT_HISTORY overrides when set.",
+        defaultValue: "on",
+        values: ["on", "off"],
+      },
+    ],
   });
 }

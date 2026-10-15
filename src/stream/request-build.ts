@@ -51,10 +51,10 @@ import {
 } from "../proto/agent_pb.js";
 import { buildSelectedContextBlob, type CursorModelParameter } from "../client/cursor-wire.js";
 import { debugLog, requestDebugByBody } from "./debug-log.js";
+import { resolvePromptHistoryEnabled } from "./prompt-history-setting.js";
 import {
   buildRootPromptMessages,
   encodeRootPromptMessage,
-  isPromptHistoryEnabled,
   systemPromptRootMessage,
 } from "./root-prompt.js";
 export {
@@ -593,7 +593,7 @@ export function buildCursorRequestFromParts(
   // entries are often empty placeholders.
   // With history enabled, merge the capability policy into the existing rules
   // message. Without history, retain only the policy as a separate user message.
-  const promptMessages = isPromptHistoryEnabled()
+  const promptMessages = resolvePromptHistoryEnabled()
     ? buildRootPromptMessages(
         `${systemPrompt}\n\n${localToolPolicyText(mcpTools)}`,
         turns,
