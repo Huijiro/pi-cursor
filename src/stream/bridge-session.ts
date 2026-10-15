@@ -64,12 +64,22 @@ function canReuseBridge(bridge: BridgeHandle): boolean {
   return bridge.alive && typeof bridge.openStream === "function";
 }
 
+/** Tear down a parked bridge we refuse to reuse (session already closed / destroy). */
+function discardBridge(bridge: BridgeHandle): void {
+  try {
+    if (bridge.alive) bridge.end();
+    else bridge.proc.kill();
+  } catch {
+    // Best-effort — the session may already be gone.
+  }
+}
+
 export function destroyIdleBridge(bridgeKey: string): void {
   const idle = idleBridges.get(bridgeKey);
   if (!idle) return;
   idleBridges.delete(bridgeKey);
   clearTimeout(idle.idleTimer);
-  if (idle.bridge.alive) idle.bridge.end();
+  discardBridge(idle.bridge);
 }
 
 export function destroyAllIdleBridges(): void {
@@ -83,7 +93,7 @@ export function parkIdleBridge(bridgeKey: string, bridge: BridgeHandle): void {
   removeActiveBridge(bridgeKey);
   destroyIdleBridge(bridgeKey);
   if (!canReuseBridge(bridge)) {
-    if (bridge.alive) bridge.end();
+    discardBridge(bridge);
     return;
   }
   debugLog("bridge.park_idle", { bridgeKey });
@@ -101,7 +111,7 @@ function takeIdleBridge(bridgeKey: string): BridgeHandle | undefined {
   idleBridges.delete(bridgeKey);
   clearTimeout(idle.idleTimer);
   if (!canReuseBridge(idle.bridge)) {
-    if (idle.bridge.alive) idle.bridge.end();
+    discardBridge(idle.bridge);
     return undefined;
   }
   return idle.bridge;
@@ -143,29 +153,42 @@ export function makeHeartbeatBytes(): Uint8Array {
   return frameConnectMessage(toBinary(AgentClientMessageSchema, heartbeat));
 }
 
+function spawnRunBridge(accessToken: string, requestBytes: Uint8Array): BridgeHandle {
+  const bridge = bridgeFactory({
+    accessToken,
+    rpcPath: "/agent.v1.AgentService/Run",
+    url: getCursorAgentUrl(),
+    persistent: true,
+    connectTimeoutMs: resolveH2ConnectTimeoutMs(process.env.PI_CURSOR_H2_CONNECT_TIMEOUT_MS),
+    idleTimeoutMs: resolveH2IdleTimeoutMs(process.env.PI_CURSOR_H2_IDLE_TIMEOUT_MS),
+  });
+  debugLog("bridge.start_run", { requestBytes });
+  bridge.write(frameConnectMessage(requestBytes));
+  return bridge;
+}
+
 export function startBridge(
   accessToken: string,
   requestBytes: Uint8Array,
   options?: { bridgeKey?: string },
 ) {
   const reused = options?.bridgeKey ? takeIdleBridge(options.bridgeKey) : undefined;
-  let bridge;
+  let bridge: BridgeHandle | undefined;
   if (reused) {
     debugLog("bridge.reuse_idle", { bridgeKey: options?.bridgeKey });
-    reused.openStream!(accessToken);
-    reused.write(frameConnectMessage(requestBytes));
-    bridge = reused;
-  } else {
-    bridge = bridgeFactory({
-      accessToken,
-      rpcPath: "/agent.v1.AgentService/Run",
-      url: getCursorAgentUrl(),
-      persistent: true,
-      connectTimeoutMs: resolveH2ConnectTimeoutMs(process.env.PI_CURSOR_H2_CONNECT_TIMEOUT_MS),
-      idleTimeoutMs: resolveH2IdleTimeoutMs(process.env.PI_CURSOR_H2_IDLE_TIMEOUT_MS),
-    });
-    debugLog("bridge.start_run", { requestBytes });
-    bridge.write(frameConnectMessage(requestBytes));
+    // openStream returns false when the parked HTTP/2 session is already closed.
+    // Spawning fresh here avoids the old path: finalizeExit(1) → bridge_close → transport_retry.
+    const opened = reused.openStream?.(accessToken);
+    if (opened !== false && reused.alive) {
+      reused.write(frameConnectMessage(requestBytes));
+      bridge = reused;
+    } else {
+      debugLog("bridge.reuse_idle_dead", { bridgeKey: options?.bridgeKey });
+      discardBridge(reused);
+    }
+  }
+  if (!bridge) {
+    bridge = spawnRunBridge(accessToken, requestBytes);
   }
   // Keep heartbeats referenced so long tool pauses do not look idle to the process.
   // 5s interval matches Cursor CLI liveness; also slides the parked-bridge TTL so

@@ -40,9 +40,11 @@ export interface BridgeHandle {
   onClose(cb: (code: number) => void): void;
   /**
    * Open a new Connect stream on a persistent bridge. Absent on one-shot
-   * (unary / test) handles.
+   * (unary / test) handles. Returns `false` when the parked HTTP/2 session is
+   * already dead so callers can spawn a fresh bridge instead of treating the
+   * failed reopen as a mid-turn transport error.
    */
-  openStream?(accessToken: string): void;
+  openStream?(accessToken: string): boolean;
   /** Fires when a persistent bridge reports the current stream ended. */
   onStreamDone?(cb: () => void): void;
 }

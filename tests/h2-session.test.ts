@@ -180,4 +180,43 @@ describe("in-process h2 session bridge", () => {
     expect(bridge.alive).toBe(false);
     expect(session.destroy).toHaveBeenCalled();
   });
+
+  it("marks the bridge dead on quiet session close without GOAWAY", () => {
+    const { session, bridge, events } = sessionHarness({ persistent: true });
+    const closed = vi.fn();
+    bridge.onClose(closed);
+
+    session.closed = true;
+    session.emit("close");
+
+    expect(bridge.alive).toBe(false);
+    expect(closed).toHaveBeenCalledWith(2);
+    expect(events).toContain("bridge.session_close");
+  });
+
+  it("reports alive=false when the session is closed even before finalizeExit", () => {
+    const { session, bridge } = sessionHarness({ persistent: true });
+    expect(bridge.alive).toBe(true);
+
+    session.closed = true;
+
+    expect(bridge.alive).toBe(false);
+  });
+
+  it("returns false from openStream when the parked session is already closed", () => {
+    const { session, streams, bridge, events } = sessionHarness({ persistent: true });
+    streams[0]!.emit("end");
+    expect(bridge.alive).toBe(true);
+
+    session.closed = true;
+    const closed = vi.fn();
+    // Mimic idle reuse: clear prior listeners before reopen.
+    const opened = bridge.openStream!("token-2");
+    bridge.onClose(closed);
+
+    expect(opened).toBe(false);
+    expect(bridge.alive).toBe(false);
+    expect(session.request).toHaveBeenCalledTimes(1);
+    expect(events).toContain("bridge.open_stream_dead");
+  });
 });
