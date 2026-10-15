@@ -19,8 +19,10 @@
  *     `tool-result` content parts, with MCP tool names in Cursor's
  *     `mcp_<provider>_<tool>` form.
  *
- * Only used when a request is built without an upstream checkpoint. With a
- * checkpoint the server already holds the rendered history and appends to it.
+ * Used when publishing prompts: no upstream checkpoint, an empty checkpoint
+ * prompt list, or a system-prompt refresh with history enabled. With a usable
+ * checkpoint the server already holds the rendered history and appends to it,
+ * so request-build leaves that list alone by default.
  */
 import { createHash } from "node:crypto";
 
@@ -248,7 +250,12 @@ export function encodeRootPromptMessage(message: RootPromptMessage): Uint8Array 
   return new TextEncoder().encode(JSON.stringify(message));
 }
 
-/** Env escape hatch: `PI_CURSOR_PROMPT_HISTORY=0` restores the pre-fix behavior. */
+/**
+ * Whether rebuilt/empty-checkpoint requests publish Pi transcript into
+ * `root_prompt_messages_json`. Default on. `PI_CURSOR_PROMPT_HISTORY=0` keeps
+ * only the local-tool policy on those publishes; usable checkpoints are still
+ * left alone either way.
+ */
 export function isPromptHistoryEnabled(envValue = process.env.PI_CURSOR_PROMPT_HISTORY): boolean {
   const raw = envValue?.trim().toLowerCase();
   if (!raw) return true;

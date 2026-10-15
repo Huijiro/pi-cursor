@@ -33,6 +33,13 @@ function rootPromptMessages(payload: {
   });
 }
 
+
+function storePromptBlob(json: string): { id: Uint8Array; hex: string; bytes: Uint8Array } {
+  const bytes = new TextEncoder().encode(json);
+  const id = new Uint8Array(32).fill(42);
+  return { id, hex: Buffer.from(id).toString("hex"), bytes };
+}
+
 const historyTurn: ParsedTurn = {
   userText: "my favourite color is black",
   steps: [
@@ -116,7 +123,41 @@ describe("request build root prompt wiring", () => {
     expect(JSON.stringify(rules)).toContain("Native Cursor local tools are disabled");
   });
 
-  it("always overlays Pi history onto a checkpoint so empty server placeholders are not the prompt", () => {
+  it("leaves a usable checkpoint prompt list alone by default", () => {
+    const priorRoot = storePromptBlob(
+      '{"role":"user","content":[{"type":"text","text":"PRIOR CHECKPOINT HISTORY"}]}',
+    );
+    const checkpoint = toBinary(
+      ConversationStateStructureSchema,
+      create(ConversationStateStructureSchema, {
+        agentType: "cli",
+        rootPromptMessagesJson: [priorRoot.id],
+      }),
+    );
+    const pinned = buildCursorRequest({
+      modelId: "cursor-grok-4.6-low",
+      systemPrompt: "UPDATED PI PROMPT",
+      userText: "next",
+      turns: [historyTurn],
+      conversationId: "conv-1",
+      checkpoint,
+      existingBlobStore: new Map([[priorRoot.hex, priorRoot.bytes]]),
+    });
+    const messages = rootPromptMessages(pinned);
+    expect(JSON.stringify(messages)).toContain("PRIOR CHECKPOINT HISTORY");
+    expect(JSON.stringify(messages)).not.toContain("UPDATED PI PROMPT");
+    expect(JSON.stringify(messages)).not.toContain("my favourite color is black");
+    const runRequest = fromBinary(AgentClientMessageSchema, pinned.requestBytes).message.value as {
+      customSystemPrompt?: string;
+      modelDetails?: { modelId?: string };
+      requestedModel?: { modelId?: string };
+    };
+    expect(runRequest.customSystemPrompt).toBeUndefined();
+    expect(runRequest.modelDetails).toBeUndefined();
+    expect(runRequest.requestedModel?.modelId).toBe("cursor-grok-4.6-low");
+  });
+
+  it("republishes Pi history onto a checkpoint with an empty prompt list", () => {
     const checkpoint = toBinary(
       ConversationStateStructureSchema,
       create(ConversationStateStructureSchema, { agentType: "cli" }),
@@ -135,14 +176,33 @@ describe("request build root prompt wiring", () => {
     const rules = messages.filter((message) => JSON.stringify(message).includes("<rules>"));
     expect(rules).toHaveLength(1);
     expect(JSON.stringify(rules)).toContain("Native Cursor local tools are disabled");
-    const runRequest = fromBinary(AgentClientMessageSchema, pinned.requestBytes).message.value as {
-      customSystemPrompt?: string;
-      modelDetails?: { modelId?: string };
-      requestedModel?: { modelId?: string };
-    };
-    expect(runRequest.customSystemPrompt).toBeUndefined();
-    expect(runRequest.modelDetails).toBeUndefined();
-    expect(runRequest.requestedModel?.modelId).toBe("cursor-grok-4.6-low");
+  });
+
+  it("republishes history when refreshSystemPrompt is set on a usable checkpoint", () => {
+    const priorRoot = storePromptBlob(
+      '{"role":"user","content":[{"type":"text","text":"STALE CHECKPOINT HISTORY"}]}',
+    );
+    const checkpoint = toBinary(
+      ConversationStateStructureSchema,
+      create(ConversationStateStructureSchema, {
+        agentType: "cli",
+        rootPromptMessagesJson: [priorRoot.id],
+      }),
+    );
+    const pinned = buildCursorRequest({
+      modelId: "cursor-grok-4.6-low",
+      systemPrompt: "FRESH PI PROMPT",
+      userText: "next",
+      turns: [historyTurn],
+      conversationId: "conv-1",
+      checkpoint,
+      existingBlobStore: new Map([[priorRoot.hex, priorRoot.bytes]]),
+      refreshSystemPrompt: true,
+    });
+    const messages = rootPromptMessages(pinned);
+    expect(JSON.stringify(messages)).toContain("FRESH PI PROMPT");
+    expect(JSON.stringify(messages)).toContain("my favourite color is black");
+    expect(JSON.stringify(messages)).not.toContain("STALE CHECKPOINT HISTORY");
   });
 });
 

@@ -275,43 +275,78 @@ describe("Pi-only local tool routing", () => {
     },
   );
 
-  it.each([false, true])(
-    "publishes the policy with history disabled (checkpoint=%s)",
-    (checkpoint) => {
-      vi.stubEnv("PI_CURSOR_PROMPT_HISTORY", "0");
-      try {
-        const payload = buildCursorRequest({
-          modelId: "cursor-grok-4.6",
-          systemPrompt: "PRIVATE SYSTEM",
-          userText: "search",
-          turns: [{ userText: "OLD HISTORY", steps: [] }],
-          conversationId: "policy",
-          checkpoint: checkpoint
-            ? toBinary(
-                ConversationStateStructureSchema,
-                create(ConversationStateStructureSchema, {}),
-              )
-            : null,
-          mcpTools: tools("bash"),
-        });
-        const message = fromBinary(AgentClientMessageSchema, payload.requestBytes);
-        if (message.message.case !== "runRequest") throw new Error("missing run request");
-        const messages = message.message.value.conversationState!.rootPromptMessagesJson.map(
-          (id) =>
-            JSON.parse(
-              new TextDecoder().decode(payload.blobStore.get(Buffer.from(id).toString("hex"))!),
-            ) as { role: string },
-        );
-        const prompt = JSON.stringify(messages.filter((message) => message.role === "user"));
-        expect(prompt).toContain("Native Cursor local tools are disabled");
-        expect(prompt).toContain("mcp_pi_bash");
-        expect(prompt).not.toContain("PRIVATE SYSTEM");
-        expect(prompt).not.toContain("OLD HISTORY");
-      } finally {
-        vi.unstubAllEnvs();
-      }
-    },
-  );
+  it("publishes the policy with history disabled when there is no checkpoint", () => {
+    vi.stubEnv("PI_CURSOR_PROMPT_HISTORY", "0");
+    try {
+      const payload = buildCursorRequest({
+        modelId: "cursor-grok-4.6",
+        systemPrompt: "PRIVATE SYSTEM",
+        userText: "search",
+        turns: [{ userText: "OLD HISTORY", steps: [] }],
+        conversationId: "policy",
+        checkpoint: null,
+        mcpTools: tools("bash"),
+      });
+      const message = fromBinary(AgentClientMessageSchema, payload.requestBytes);
+      if (message.message.case !== "runRequest") throw new Error("missing run request");
+      const messages = message.message.value.conversationState!.rootPromptMessagesJson.map(
+        (id) =>
+          JSON.parse(
+            new TextDecoder().decode(payload.blobStore.get(Buffer.from(id).toString("hex"))!),
+          ) as { role: string },
+      );
+      const prompt = JSON.stringify(messages.filter((message) => message.role === "user"));
+      expect(prompt).toContain("Native Cursor local tools are disabled");
+      expect(prompt).toContain("mcp_pi_bash");
+      expect(prompt).not.toContain("PRIVATE SYSTEM");
+      expect(prompt).not.toContain("OLD HISTORY");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("leaves a usable checkpoint prompt list alone even with history disabled", () => {
+    vi.stubEnv("PI_CURSOR_PROMPT_HISTORY", "0");
+    try {
+      const priorBytes = new TextEncoder().encode(
+        JSON.stringify({
+          role: "user",
+          content: [{ type: "text", text: "PRIOR CHECKPOINT HISTORY" }],
+        }),
+      );
+      const priorId = new Uint8Array(32).fill(7);
+      const priorHex = Buffer.from(priorId).toString("hex");
+      const payload = buildCursorRequest({
+        modelId: "cursor-grok-4.6",
+        systemPrompt: "PRIVATE SYSTEM",
+        userText: "search",
+        turns: [{ userText: "OLD HISTORY", steps: [] }],
+        conversationId: "policy",
+        checkpoint: toBinary(
+          ConversationStateStructureSchema,
+          create(ConversationStateStructureSchema, {
+            rootPromptMessagesJson: [priorId],
+          }),
+        ),
+        existingBlobStore: new Map([[priorHex, priorBytes]]),
+        mcpTools: tools("bash"),
+      });
+      const message = fromBinary(AgentClientMessageSchema, payload.requestBytes);
+      if (message.message.case !== "runRequest") throw new Error("missing run request");
+      const messages = message.message.value.conversationState!.rootPromptMessagesJson.map(
+        (id) =>
+          JSON.parse(
+            new TextDecoder().decode(payload.blobStore.get(Buffer.from(id).toString("hex"))!),
+          ) as { role: string },
+      );
+      const prompt = JSON.stringify(messages);
+      expect(prompt).toContain("PRIOR CHECKPOINT HISTORY");
+      expect(prompt).not.toContain("OLD HISTORY");
+      expect(prompt).not.toContain("PRIVATE SYSTEM");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
 
 /** Records stream events and marks completion, matching the writer lifecycle used by cleanup. */
