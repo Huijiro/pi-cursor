@@ -144,6 +144,40 @@ function isObjectRecord(val: unknown): val is Record<string, unknown> {
   return typeof val === "object" && val !== null && !Array.isArray(val);
 }
 
+function toolFunctionName(tool: OpenAIToolDef): string {
+  if (!isObjectRecord(tool)) return "";
+  const fn = tool.function;
+  return isObjectRecord(fn) && typeof fn.name === "string" ? fn.name.trim() : "";
+}
+
+/**
+ * Pi hands MCP nested results to codemode as the CallToolResult wrapper. Servers such as
+ * GitHub often put JSON in text content blocks with no structuredContent; scripts that read
+ * payload fields on the wrapper see empties / [object Object].
+ */
+export const MCP_CODEMODE_RESULT_HINT =
+  "MCP nested tools resolve to CallToolResult `{ content, structuredContent?, isError? }`, not the payload fields. Prefer `structuredContent` when set; otherwise JSON.parse the joined text blocks from `content`.";
+
+/** Append the MCP unwrap hint to codemode when any mcp__* tool is in the same catalog. */
+export function annotateCodemodeForMcp(tools: OpenAIToolDef[]): OpenAIToolDef[] {
+  const names = tools.map(toolFunctionName);
+  if (!names.includes("codemode") || !names.some((name) => name.startsWith("mcp__"))) return tools;
+  return tools.map((tool) => {
+    if (!isObjectRecord(tool)) return tool;
+    const fn = tool.function;
+    if (!isObjectRecord(fn) || toolFunctionName(tool) !== "codemode") return tool;
+    const description = typeof fn.description === "string" ? fn.description.trim() : "";
+    if (!description || description.includes("CallToolResult")) return tool;
+    return {
+      ...tool,
+      function: {
+        ...fn,
+        description: `${description}\n\n${MCP_CODEMODE_RESULT_HINT}`,
+      },
+    };
+  });
+}
+
 export function slimOpenAIToolsForCursor(tools: OpenAIToolDef[]): OpenAIToolDef[] {
   if (!isSlimToolsEnabled()) return tools;
   return tools.map((tool) => {
@@ -180,7 +214,7 @@ export function buildMcpToolDefinitions(tools: OpenAIToolDef[]): McpToolDefiniti
   const cached = byMode?.get(slimEnabled);
   if (cached) return cached;
 
-  const prepared = slimOpenAIToolsForCursor(tools);
+  const prepared = annotateCodemodeForMcp(slimOpenAIToolsForCursor(tools));
   const result: McpToolDefinition[] = [];
   for (const tool of prepared) {
     if (!isObjectRecord(tool)) continue;

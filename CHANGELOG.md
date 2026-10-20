@@ -4,6 +4,7 @@
 
 ### Changed
 
+- **Codemode + MCP unwrap guidance.** When `codemode` and any `mcp__*` tool are registered, the advertised `codemode` description and local-tool policy tell Cursor that nested MCP calls resolve to `CallToolResult` `{ content, structuredContent?, isError? }` — prefer `structuredContent`, else `JSON.parse` text blocks from `content`. Without that, scripts reading payload fields on the wrapper see empties / `[object Object]` (common with GitHub MCP).
 - **When Pi's `codemode` tool is active, Cursor is steered to use it more.** Slim mode no longer collapses the `codemode` description to its first sentence (the full script contract and nested decls stay), and other tools keep a trailing `Codemode: tools.<name>(args)…` line when Pi appended one. The local-tool policy also prefers `codemode` for batching, chaining, and filtering large results — important when `PI_CURSOR_PROMPT_HISTORY=0` drops Pi's system-prompt guideline.
 
 ### Fixed

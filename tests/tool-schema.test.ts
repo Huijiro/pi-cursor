@@ -2,7 +2,12 @@ import { toJson } from "@bufbuild/protobuf";
 import { ValueSchema } from "@bufbuild/protobuf/wkt";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { buildMcpToolDefinitions, slimOpenAIToolsForCursor } from "../src/stream/tool-schema.js";
+import {
+  annotateCodemodeForMcp,
+  buildMcpToolDefinitions,
+  MCP_CODEMODE_RESULT_HINT,
+  slimOpenAIToolsForCursor,
+} from "../src/stream/tool-schema.js";
 import type { OpenAIToolDef } from "../src/stream/types.js";
 
 const previousSlimTools = process.env.PI_CURSOR_SLIM_TOOLS;
@@ -114,6 +119,69 @@ describe("Cursor tool schema encoding", () => {
       { description: "literal description", title: "literal title" },
     ]);
     expect(schema.required).toEqual(["title", "default", "literal"]);
+  });
+
+  it("annotates codemode with MCP CallToolResult unwrap guidance when mcp__ tools are present", () => {
+    process.env.PI_CURSOR_SLIM_TOOLS = "1";
+    const [codemode] = buildMcpToolDefinitions([
+      {
+        type: "function",
+        function: {
+          name: "codemode",
+          description: "Run JavaScript that calls other tools.",
+          parameters: {
+            type: "object",
+            properties: { code: { type: "string" } },
+            required: ["code"],
+          },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "mcp__github__issue_read",
+          description: "Read a GitHub issue.",
+          parameters: { type: "object", properties: {} },
+        },
+      },
+    ]);
+    expect(codemode!.description).toContain(MCP_CODEMODE_RESULT_HINT);
+    expect(
+      annotateCodemodeForMcp([
+        {
+          type: "function",
+          function: {
+            name: "codemode",
+            description: `Already mentions CallToolResult.\n\n${MCP_CODEMODE_RESULT_HINT}`,
+            parameters: { type: "object", properties: {} },
+          },
+        },
+        {
+          type: "function",
+          function: {
+            name: "mcp__github__issue_read",
+            description: "Read a GitHub issue.",
+            parameters: { type: "object", properties: {} },
+          },
+        },
+      ])[0]!.function!.description,
+    ).toBe(`Already mentions CallToolResult.\n\n${MCP_CODEMODE_RESULT_HINT}`);
+    const [alone] = buildMcpToolDefinitions([
+      {
+        type: "function",
+        function: {
+          name: "codemode",
+          description: "Run JavaScript that calls other tools.",
+          parameters: {
+            type: "object",
+            properties: { code: { type: "string" } },
+            required: ["code"],
+          },
+        },
+      },
+    ]);
+    expect(alone!.description).toBe("Run JavaScript that calls other tools.");
+    expect(alone!.description).not.toContain("CallToolResult");
   });
 
   it("keeps the full codemode description and script-call trailers under slim mode", () => {

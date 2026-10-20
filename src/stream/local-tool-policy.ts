@@ -3,6 +3,7 @@ import { create } from "@bufbuild/protobuf";
 
 import { McpToolDefinitionSchema, type McpToolDefinition } from "../proto/agent_pb.js";
 import { cursorMcpToolName, cursorMcpToolNames } from "./root-prompt.js";
+import { MCP_CODEMODE_RESULT_HINT } from "./tool-schema.js";
 
 export const MAX_LOCAL_TOOL_REJECTIONS = 8;
 export const LOCAL_TOOL_LOOP_ERROR =
@@ -108,8 +109,10 @@ export function localToolPolicyText(tools: McpToolDefinition[]): string {
     ([name, advertised]) => `call the custom tool "${name}" as ${advertised}`,
   );
   const codemodeName = available.includes("codemode") ? toolNames.advertised("codemode") : undefined;
+  const hasMcpTools = available.some((name) => name.startsWith("mcp__"));
   const codemodeSteer = codemodeName
-    ? `When ${codemodeName} is available, prefer it to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate Pi tool calls. Pass raw JavaScript (not JSON, no code fence); inside the script call tools via tools.<name>(args). `
+    ? `When ${codemodeName} is available, prefer it to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate Pi tool calls. Pass raw JavaScript (not JSON, no code fence); inside the script call tools via tools.<name>(args). ` +
+      (hasMcpTools ? `${MCP_CODEMODE_RESULT_HINT} ` : "")
     : "";
   return (
     "Local file reads, searches, directory listings, writes, deletions and shell commands " +
