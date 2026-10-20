@@ -116,6 +116,48 @@ describe("Cursor tool schema encoding", () => {
     expect(schema.required).toEqual(["title", "default", "literal"]);
   });
 
+  it("keeps the full codemode description and script-call trailers under slim mode", () => {
+    process.env.PI_CURSOR_SLIM_TOOLS = "1";
+    const full =
+      "Run JavaScript that calls other tools. The input is raw JavaScript (not JSON, no code fence). " +
+      "Use await tools.read({ path }) and Promise.allSettled for parallel work.\n\n" +
+      "Globals:\n- text(value), store(key, value)\n\nNested tools:\n### `read`\ndeclare function read...";
+    const bashTrailer =
+      "Codemode: `tools.bash(args)` resolves to `{ output, truncated, full_output_path?, exit_code, wall_time_seconds }`.";
+    const [codemode, bash] = buildMcpToolDefinitions([
+      {
+        type: "function",
+        function: {
+          name: "codemode",
+          description: full,
+          parameters: {
+            type: "object",
+            properties: { code: { type: "string", description: "Raw JavaScript source." } },
+            required: ["code"],
+          },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "bash",
+          description:
+            "Execute a bash command in the current working directory. Long prose that would normally collapse to the first sentence only.\n\n" +
+            bashTrailer,
+          parameters: {
+            type: "object",
+            properties: { command: { type: "string" } },
+            required: ["command"],
+          },
+        },
+      },
+    ]);
+    expect(codemode!.description).toBe(full);
+    expect(bash!.description).toContain("Execute a bash command in the current working directory.");
+    expect(bash!.description).not.toContain("Long prose that would normally");
+    expect(bash!.description).toContain(bashTrailer);
+  });
+
   it.each(["0", "1"])(
     "handles non-function and malformed tools defensively in mode %s",
     (slimMode) => {

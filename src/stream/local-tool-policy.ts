@@ -101,13 +101,16 @@ export function nativeToolRejectReason(execCase: string, tools: McpToolDefinitio
 /** Builds prompt guidance for Pi-owned local operations, including tool-free requests. */
 export function localToolPolicyText(tools: McpToolDefinition[]): string {
   const available = availableToolNamesFor(tools);
+  const toolNames = cursorMcpToolNames(available);
   const known = new Set(Object.values(LOCAL_TOOL_HINTS).flat());
-  const names = available
-    .filter((name) => known.has(name))
-    .map(cursorMcpToolNames(available).advertised);
+  const names = available.filter((name) => known.has(name)).map(toolNames.advertised);
   const clashes = renamedToolNames(available).map(
     ([name, advertised]) => `call the custom tool "${name}" as ${advertised}`,
   );
+  const codemodeName = available.includes("codemode") ? toolNames.advertised("codemode") : undefined;
+  const codemodeSteer = codemodeName
+    ? `When ${codemodeName} is available, prefer it to batch independent tool calls (Promise.allSettled), chain them, or filter large output, instead of many separate Pi tool calls. Pass raw JavaScript (not JSON, no code fence); inside the script call tools via tools.<name>(args). `
+    : "";
   return (
     "Local file reads, searches, directory listings, writes, deletions and shell commands " +
     'must use Pi MCP tools under namespace "pi". Native Cursor local tools are disabled; do not call or retry them. ' +
@@ -119,6 +122,7 @@ export function localToolPolicyText(tools: McpToolDefinition[]): string {
         "Do that silently. Never narrate that Pi tools moved, disappeared, shifted, or need rediscovery — " +
         "the direct list flickering is normal Cursor MCP exposure, not a tool-surface change. " +
         "Other exposed Pi tools may also support the operation. Follow each tool's input schema. " +
+        codemodeSteer +
         "If no registered tool supports an operation, report that limitation."
       : "No Pi MCP tools are exposed for this request. Local operations are unavailable in this request.")
   );

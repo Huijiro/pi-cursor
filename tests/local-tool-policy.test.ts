@@ -171,6 +171,16 @@ describe("Pi-only local tool routing", () => {
     expect(reject).toContain("never say tools moved");
   });
 
+  it("steers toward codemode when that tool is registered", () => {
+    const withCodemode = localToolPolicyText(tools("bash", "codemode", "read"));
+    expect(withCodemode).toContain("mcp_pi_codemode");
+    expect(withCodemode).toContain("prefer it to batch independent tool calls");
+    expect(withCodemode).toContain("Promise.allSettled");
+    expect(withCodemode).toContain("tools.<name>(args)");
+    expect(withCodemode).toContain("raw JavaScript");
+    expect(localToolPolicyText(tools("bash", "read"))).not.toContain("codemode");
+  });
+
   it("answers subagentArgs with a typed error instead of an unhandled throw", () => {
     const frames: Uint8Array[] = [];
     const onMcp = vi.fn();
