@@ -178,7 +178,16 @@ describe("Pi-only local tool routing", () => {
     expect(withCodemode).toContain("Promise.allSettled");
     expect(withCodemode).toContain("tools.<name>(args)");
     expect(withCodemode).toContain("raw JavaScript");
+    expect(withCodemode).not.toContain("CallToolResult");
     expect(localToolPolicyText(tools("bash", "read"))).not.toContain("codemode");
+  });
+
+  it("adds MCP CallToolResult unwrap guidance when codemode and mcp__ tools are both registered", () => {
+    const policy = localToolPolicyText(tools("bash", "codemode", "mcp__github__issue_read"));
+    expect(policy).toContain("CallToolResult");
+    expect(policy).toContain("structuredContent");
+    expect(policy).toContain("JSON.parse");
+    expect(localToolPolicyText(tools("bash", "mcp__github__issue_read"))).not.toContain("CallToolResult");
   });
 
   it("answers subagentArgs with a typed error instead of an unhandled throw", () => {
