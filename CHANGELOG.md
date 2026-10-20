@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **When Pi's `codemode` tool is active, Cursor is steered to use it more.** Slim mode no longer collapses the `codemode` description to its first sentence (the full script contract and nested decls stay), and other tools keep a trailing `Codemode: tools.<name>(args)…` line when Pi appended one. The local-tool policy also prefers `codemode` for batching, chaining, and filtering large results — important when `PI_CURSOR_PROMPT_HISTORY=0` drops Pi's system-prompt guideline.
+
 ### Fixed
 
 - **Idle HTTP/2 bridge reuse no longer fails then retries when Cursor quietly closed the parked session.** `alive` now reflects session health, quiet `close` events finalize the bridge, and `openStream` returns `false` on a dead session so `startBridge` drops it and spawns fresh instead of writing into a closed connection (the old `bridge_close` code=1 within ms of `stream_start` stutter).

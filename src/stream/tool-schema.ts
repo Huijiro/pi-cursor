@@ -116,11 +116,27 @@ function slimJsonSchema(value: unknown, depth = 0): unknown {
   return out;
 }
 
-function conciseToolDescription(description: string): string {
-  const normalized = description.replace(/\s+/g, " ").trim();
-  if (normalized.length <= 120) return normalized;
-  const firstSentence = normalized.match(/^.{24,117}?[.!?](?:\s|$)/)?.[0]?.trim();
-  return firstSentence || `${normalized.slice(0, 117)}...`;
+/** Trailer Pi appends in codemode.mode=on: how scripts call this tool. */
+const CODEMODE_SCRIPT_CALL_TRAILER = /(?:\r?\n){2}Codemode:\s*`tools\.[^`]+`\s+resolves to[\s\S]+$/;
+
+/**
+ * Compact tool prose for Cursor's MCP surface. Codemode keeps its full description:
+ * that text is the script contract (raw JS, globals, nested tool decls), not optional
+ * marketing copy. Other tools keep a trailing "Codemode: tools.<name>(args)…" line
+ * when Pi appended one, so slim mode does not erase the script-call hint.
+ */
+function conciseToolDescription(description: string, options?: { preserveFull?: boolean }): string {
+  const trimmed = description.trim();
+  if (options?.preserveFull) return trimmed;
+  const trailer = trimmed.match(CODEMODE_SCRIPT_CALL_TRAILER)?.[0]?.trim();
+  const body = trailer ? trimmed.slice(0, trimmed.length - trailer.length).trimEnd() : trimmed;
+  const normalized = body.replace(/\s+/g, " ").trim();
+  let concise = normalized;
+  if (normalized.length > 120) {
+    const firstSentence = normalized.match(/^.{24,117}?[.!?](?:\s|$)/)?.[0]?.trim();
+    concise = firstSentence || `${normalized.slice(0, 117)}...`;
+  }
+  return trailer ? `${concise}\n\n${trailer}` : concise;
 }
 
 /** Compact tool prose/schemas for the Cursor MCP tool surface. */
@@ -137,8 +153,11 @@ export function slimOpenAIToolsForCursor(tools: OpenAIToolDef[]): OpenAIToolDef[
     const parameters = isObjectRecord(fn.parameters)
       ? (slimJsonSchema(fn.parameters) as Record<string, unknown>)
       : fn.parameters;
+    const name = typeof fn.name === "string" ? fn.name.trim() : "";
     const description =
-      typeof fn.description === "string" ? conciseToolDescription(fn.description) : "";
+      typeof fn.description === "string"
+        ? conciseToolDescription(fn.description, { preserveFull: name === "codemode" })
+        : "";
     return {
       ...tool,
       function: {
